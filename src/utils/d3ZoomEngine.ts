@@ -11,8 +11,6 @@ export const ZOOM_MIN = 0.5, ZOOM_MAX = 8;
 /** Time constant of the camera ease. At 60 fps this matches the former fixed
  * 0.18 per-frame factor; on slow frames it catches up instead of lagging. */
 export const EASE_TAU_MS = 80;
-/** Delay after the last D3 event before the settled view is reported. */
-export const SETTLE_DELAY_MS = 50;
 
 /** The SVG layers share this viewBox: scene bounds plus a 4% margin. */
 export function fittedViewBox(bounds: MapBounds): MapBounds {
@@ -48,7 +46,7 @@ export function textCullBounds(x: number, y: number, size: number, characters: n
   const extent = Math.max(size, characters * size * 0.6) / 2 + size;
   return { x: x - extent, y: y - extent, width: extent * 2, height: extent * 2 };
 }
-/** Reported once the camera is at rest so React can mount only useful labels. */
+/** Buffered label view, reported during gestures when eligible IDs/tiers change. */
 export type SettledView = { scale: number; level: number; visibleIds: string[] };
 export type D3ZoomOptions = {
   bounds: MapBounds;
@@ -120,11 +118,11 @@ export function createD3ZoomEngine(stage: HTMLElement, camera: HTMLElement, opti
   const structureNodes = Array.from(backdrop?.querySelectorAll<SVGTextElement>("text") ?? [], node => ({
     node, bounds: textCullBounds(Number(node.getAttribute("x") ?? 0), Number(node.getAttribute("y") ?? 0), Number(node.getAttribute("font-size")) || 1, node.textContent?.length ?? 0), hidden: null as boolean | null, oldDisplay: node.style.display,
   }));
-  // Label groups are mounted and unmounted by React from the settled view, so
+  // Label groups are mounted and unmounted by React from the buffered view, so
   // they are resolved per frame instead of cached.
   const labelNodeBounds = new WeakMap<Element, MapBounds | null>();
   let settledSignature: string | null = null;
-  let settleTimer: number | null = null, settlePending = true, lastFrameTime: number | null = null;
+  let settlePending = true, lastFrameTime: number | null = null;
   let paintedLabelLevel = -1;
   let paintedDetail: string | null = null;
   let paintedInteraction: "zoom" | "pan" | null | undefined;
@@ -134,7 +132,6 @@ export function createD3ZoomEngine(stage: HTMLElement, camera: HTMLElement, opti
   stage.style.touchAction = "none";
   camera.style.transformOrigin = "0 0";
   function clearRestore() { if (restoreTimer !== null) win.clearTimeout(restoreTimer); restoreTimer = null; }
-  function clearSettle() { if (settleTimer !== null) win.clearTimeout(settleTimer); settleTimer = null; }
   function queueFrame() {
     if (!destroyed && !rendering && wheelFrame === null) wheelFrame = win.requestAnimationFrame(wheelTick);
   }
@@ -185,6 +182,7 @@ export function createD3ZoomEngine(stage: HTMLElement, camera: HTMLElement, opti
     .on("zoom.floorplan", (event: D3ZoomEvent<HTMLElement, unknown>) => {
       if (destroyed) return;
       renderTarget = event.transform;
+      settlePending = true;
       targetLowDetail = threshold > 0 && event.transform.k < threshold;
       if (event.transform.k !== previousScale) interaction = "zoom";
       previousScale = event.transform.k;
@@ -193,14 +191,11 @@ export function createD3ZoomEngine(stage: HTMLElement, camera: HTMLElement, opti
     .on("end.floorplan", () => {
       if (destroyed) return;
       clearRestore(); restoreTimer = win.setTimeout(() => { restoreTimer = null; if (!destroyed) restoreAnnotations(); }, 150);
-      // Labels follow the camera target shortly after the last event, independent
-      // of the slower annotation restore and of the visual ease finishing.
-      clearSettle(); settleTimer = win.setTimeout(() => { settleTimer = null; if (!destroyed) { settlePending = true; queueFrame(); } }, SETTLE_DELAY_MS);
     });
   selection.call(behavior);
   selection.call(behavior.transform, zoomIdentity);
-  // The initial view reports in the first frame; drop the timers the mount transform scheduled.
-  clearRestore(); clearSettle(); interaction = null; settlePending = true; queueFrame();
+  // The initial label view reports in the first frame.
+  clearRestore(); interaction = null; settlePending = true; queueFrame();
   function paintStrokeScale(k: number) {
     // Strokes are authored in map units; this keeps them visually constant as
     // the fit frame grows with zoom. Written per frame so borders never thicken
@@ -258,6 +253,7 @@ export function createD3ZoomEngine(stage: HTMLElement, camera: HTMLElement, opti
       selection.call(behavior.transform, target);
     }
     if (renderTarget) {
+      settlePending = true;
       const target = renderTarget;
       const alpha = preference.matches || snapNextFrame ? 1 : 1 - Math.exp(-dt / EASE_TAU_MS);
       const next = zoomIdentity.translate(
@@ -302,17 +298,18 @@ export function createD3ZoomEngine(stage: HTMLElement, camera: HTMLElement, opti
         if (node.style.display !== display) node.style.display = display;
       }
     }
-    // Report the camera *target* once per change so React can mount labels for
-    // visible, tier-eligible booths while the visual ease is still finishing.
+    // Prefetch labels for the target, retaining those still visible in the eased
+    // camera. This avoids both delayed reveals and disappearing labels mid-pan.
+    // Signature deduplication keeps unchanged frames out of React.
     if (settlePending && !wheelTarget) {
       settlePending = false;
       const target = zoomTransform(stage);
       const targetVisible = visibleMapBounds(viewBox, frame.width, frame.height, target);
       if (targetVisible && options.onViewSettle) {
-        const level = labelLevel(target.k), visibleIds: string[] = [];
-        for (const item of cullNodes) if (intersectsBounds(item.bounds, targetVisible)) visibleIds.push(item.id);
+        const scale = Math.max(currentView.k, target.k), level = labelLevel(scale), visibleIds: string[] = [];
+        for (const item of cullNodes) if (intersectsBounds(item.bounds, targetVisible) || (visible && intersectsBounds(item.bounds, visible))) visibleIds.push(item.id);
         const signature = `${level}|${visibleIds.join(",")}`;
-        if (signature !== settledSignature) { settledSignature = signature; options.onViewSettle({ scale: target.k, level, visibleIds }); }
+        if (signature !== settledSignature) { settledSignature = signature; options.onViewSettle({ scale, level, visibleIds }); }
       }
     }
     if (controls) {
@@ -408,7 +405,7 @@ export function createD3ZoomEngine(stage: HTMLElement, camera: HTMLElement, opti
     isHighDetail: () => threshold === 0 || zoomTransform(stage).k >= threshold,
     destroy() {
       if (destroyed) return;
-      destroyed = true; clearRestore(); clearSettle(); clearWheel(); selection.interrupt(); selection.on(".zoom", null).on(".floorplan", null);
+      destroyed = true; clearRestore(); clearWheel(); selection.interrupt(); selection.on(".zoom", null).on(".floorplan", null);
       if (wheelFrame !== null) win.cancelAnimationFrame(wheelFrame);
       wheelFrame = null; renderTarget = null;
       preference.removeEventListener("change", motionChanged);

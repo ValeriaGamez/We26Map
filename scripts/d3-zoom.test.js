@@ -1,7 +1,7 @@
 ﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { createD3ZoomEngine, focusTransform, labelLevel, visibleMapBounds, intersectsBounds, textCullBounds, frameFor, fittedViewBox, ZOOM_MAX, SETTLE_DELAY_MS, EASE_TAU_MS } from '../src/utils/d3ZoomEngine.ts';
+import { createD3ZoomEngine, focusTransform, labelLevel, visibleMapBounds, intersectsBounds, textCullBounds, frameFor, fittedViewBox, ZOOM_MAX, EASE_TAU_MS } from '../src/utils/d3ZoomEngine.ts';
 
 // Mirrors FloorPlan.tsx: an HTML stage (gesture surface) > camera (the only
 // transformed element) > fit (letterboxed frame) > three sibling SVG layers.
@@ -94,7 +94,7 @@ test('structural text bounds enclose rotated text of any length', () => {
   assert.equal(long.width, long.height);
 });
 
-test('settled views report the camera target 50 ms after the last event, once per change', async () => {
+test('label views update in the next animation frame without waiting for gesture-end timers', () => {
   const settled = [];
   const f = setup(svg => {
     svg.querySelector('#viewport-matrix').insertAdjacentHTML('beforeend', '<rect data-booth-id="far" x="900" y="500" width="20" height="20"/>');
@@ -106,30 +106,54 @@ test('settled views report the camera target 50 ms after the last event, once pe
   f.win.setTimeout = (callback, delay) => { timers.set(++id, { callback, delay }); return id; };
   f.win.clearTimeout = key => timers.delete(key);
   const flush = () => { const batch = [...frames.values()]; frames.clear(); batch.forEach(callback => callback(f.win.performance.now())); };
-  const fireTimers = () => { const batch = [...timers.values()]; timers.clear(); batch.forEach(({ callback }) => callback()); };
   try {
     assert.equal(settled.length, 1);
     assert.deepEqual(settled[0], { scale: 1, level: 0, visibleIds: ['a', 'far'] });
     f.win.dispatchEvent(new f.win.Event('resize')); flush();
     assert.equal(settled.length, 1, 'unchanged views do not re-report');
     f.engine.fitBounds(-10, -10, 30, 30, { animate: false }); flush();
-    assert.equal(settled.length, 1, 'no report before the settle debounce elapses');
-    const settleTimer = [...timers.values()].find(t => t.delay === SETTLE_DELAY_MS);
-    assert.ok(settleTimer, 'settle debounce scheduled independently of the 150 ms annotation restore');
-    fireTimers(); flush();
     assert.equal(settled.length, 2);
     assert.equal(settled[1].level, 4);
     assert.deepEqual(settled[1].visibleIds, ['a']);
     assert.ok(settled[1].scale <= ZOOM_MAX);
-    // An eased (animated) move reports the target before the ease has visually finished.
-    f.engine.resetView(); // D3 transition; events arrive over real time
-    await new Promise(resolve => setTimeout(resolve, 650));
-    fireTimers(); flush();
+    assert.ok([...timers.values()].every(t => t.delay === 150), 'only annotation restoration remains delayed');
+    f.engine.resetView({ animate: false }); flush();
     const last = settled.at(-1);
     assert.equal(last.level, 0);
     assert.deepEqual(last.visibleIds, ['a', 'far']);
-    assert.notEqual(f.group.style.transform, 'translate3d(0px, 0px, 0px)', 'ease still in progress when labels were reported');
+    assert.equal(f.group.style.transform, 'translate3d(0px, 0px, 0px)');
   } finally { f.close(); }
+});
+
+test('continuous wheel zoom prefetches labels while retaining the displayed view and deduplicating frames', () => {
+  const views=[];
+  const f=setup(stage=>{
+    stage.querySelector('#viewport-matrix').insertAdjacentHTML('beforeend','<rect data-booth-id="far" x="900" y="500" width="20" height="20"/>');
+    return {onViewSettle:view=>views.push(view)};
+  });
+  const frames=new Map();let id=0,time=0;
+  f.win.requestAnimationFrame=callback=>{frames.set(++id,callback);return id;};
+  f.win.cancelAnimationFrame=key=>frames.delete(key);
+  const flush=()=>{const batch=[...frames.values()];frames.clear();time+=16;batch.forEach(callback=>callback(time));};
+  try{
+    f.stage.dispatchEvent(new f.win.WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY:-500,clientX:500,clientY:300}));
+    assert.equal(views.length,1,'input handler does not update React');
+    flush();
+    assert.ok(views.at(-1).level>=1,'new label tier prepared before the wheel gesture ends');
+    assert.equal(f.labels.getAttribute('data-label-level'),'0','displayed camera is still easing toward the new tier');
+    const target=visibleMapBounds(fittedViewBox(f.options.bounds),1000,600,f.engine.getTransform());
+    assert.equal(intersectsBounds({x:0,y:0,width:20,height:20},target),false);
+    assert.ok(views.at(-1).visibleIds.includes('a'),'keep labels still in the displayed view even when absent from the target');
+    for(let step=0;step<80;step++)flush();
+    assert.equal(views.at(-1).visibleIds.includes('a'),false,'old labels leave when the camera catches up');
+    const count=views.length;
+    f.win.dispatchEvent(new f.win.Event('resize'));flush();
+    assert.equal(views.length,count,'unchanged label membership does not trigger a React update');
+    f.stage.dispatchEvent(new f.win.WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY:500,clientX:500,clientY:300}));flush();
+    assert.ok(views.at(-1).level>=1,'keep the displayed tier while zooming out');
+    for(let step=0;step<80;step++)flush();
+    assert.equal(views.at(-1).level,0,'drop the old tier after zoom-out finishes');
+  }finally{f.close();}
 });
 
 test('camera ease is frame-rate independent: slow frames converge in fewer frames', () => {

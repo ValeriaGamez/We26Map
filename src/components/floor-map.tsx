@@ -87,7 +87,7 @@ export default function FloorMap({ area = "main" }: { area?: FloorplanArea }) {
       <div id="explorer-panel-content" ref={scroll} className={styles.panelContent} onKeyDown={event => { if (event.key === "Escape") { if (selected) returnToBrowse(); else if (phone) setSheetExpanded(false); } }}>
         {selected ? <section className={styles.placeCard} aria-label="Selected booth details">
           <button ref={back} className={styles.back} onClick={returnToBrowse}><Icon name="back" /><span>{tab === "all" ? "All companies" : tab === "saved" ? "Saved" : "Route"}</span></button>
-          <h1>{company && careerUrl ? <a className={styles.careerLink} href={careerUrl} target="_blank" rel="noopener noreferrer" aria-label={`${company.name} careers (opens in a new tab)`}>{company.name} <span aria-hidden="true">↗</span></a> : company?.name ?? "Available booth"}</h1>
+          <h1>{company && careerUrl ? <a className={styles.careerLink} href={careerUrl} target="_blank" rel="noopener noreferrer" aria-label={`${company.name} careers (opens in a new tab)`}>{company.name}<Icon name="link" /></a> : company?.name ?? "Available booth"}</h1>
           <p className={styles.subtitle}>Booth {company ? company.boothIds.map(id => booths.get(id)?.number).join(" · ") : selected.number}</p>
           <div className={styles.actions}>
             <button type="button" aria-pressed={companyState.saved} disabled={!company} onClick={() => company && updateCompanyPreference(company.id, { saved: !companyState.saved })}><Icon name="star" filled={companyState.saved} /><span>{companyState.saved ? "Saved" : "Save"}</span></button>

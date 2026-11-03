@@ -28,7 +28,6 @@
 .viewport[data-label-level="1"] .labels:not([data-label-tier="0"], [data-label-tier="1"]),
 .viewport[data-label-level="2"] .labels:not([data-label-tier="0"], [data-label-tier="1"], [data-label-tier="2"]),
 .viewport[data-label-level="3"] .labels[data-label-tier="4"] { display: none; }
-.labels { animation: detailReveal 90ms ease-out; }
 .viewport:not(:global(.is-low-detail)) .secondaryLabel { animation: detailReveal 90ms ease-out; }
 @keyframes detailReveal { from { opacity: 0; } to { opacity: 1; } }
 .controls { position: absolute; z-index: 5; top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); display: flex; flex-direction: column; padding: 2px; border-radius: 24px; background: var(--glass-background); -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter); border: var(--glass-border); box-shadow: var(--glass-shadow); }
@@ -43,9 +42,9 @@
 .boundary { fill: #fff; stroke: #8e8e93; stroke-width: 1px; vector-effect: non-scaling-stroke; rx: calc(2px * var(--sw, 1)); ry: calc(2px * var(--sw, 1)); }
 .available.boundary { fill: #fff; }.held.boundary { fill: #f6f4f8; }
 .visited.boundary { fill: #e4e3e7; stroke: #a9a8a9; }
-.related.boundary { stroke: rgba(var(--accent-rgb), .65); }
+.related.boundary { fill: #eee8f5; stroke: rgba(var(--accent-rgb), .65); }
 .booth:focus-visible.boundary { stroke: var(--accent); stroke-width: 2px; }
-.selected.boundary { fill: #eae7f1; stroke: var(--accent); stroke-width: 2px; }
+.selected.boundary { fill: #c9b6df; stroke: var(--accent); stroke-width: 2px; }
 .visitedLabel { fill: #57565f; }
 .savedMarker { fill: var(--saved-gold); stroke: var(--saved-gold); }
 .visitedMarker { fill: var(--visited-gray); stroke: var(--visited-gray); }

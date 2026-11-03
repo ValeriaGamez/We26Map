@@ -72,8 +72,8 @@ function MapSurface({ data, selectedBoothId, onSelectBooth, onDeselectBooth, foc
   const [internalSelection, setInternalSelection] = useState<string | null>(null);
   const showLabels = true;
   const [backdropFailed, setBackdropFailed] = useState(false);
-  // Only booths inside the settled frustum at an eligible label tier mount
-  // label nodes; the engine's CSS culling covers movement between settles.
+  // Mount labels for the displayed and upcoming view during zoom/pan.
+  // The engine deduplicates view changes and handles per-frame CSS culling.
   const [view, setView] = useState<{ level: number; visibleIds: ReadonlySet<string> } | null>(null);
   const settle = useCallback((next: SettledView) => setView({ level: next.level, visibleIds: new Set(next.visibleIds) }), []);
   const selectedId = selectedBoothId === undefined ? internalSelection : selectedBoothId;

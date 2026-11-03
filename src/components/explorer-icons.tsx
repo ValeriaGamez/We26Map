@@ -1,4 +1,4 @@
-type IconName = "search" | "star" | "check" | "back" | "arrow";
+type IconName = "search" | "star" | "check" | "back" | "arrow" | "link";
 export default function ExplorerIcon({ name, filled = false }: { name: IconName; filled?: boolean }) {
   return <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill={filled && name === "star" ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
     {name === "search" && <><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4.5 4.5" /></>}
@@ -6,5 +6,6 @@ export default function ExplorerIcon({ name, filled = false }: { name: IconName;
     {name === "check" && <><circle cx="12" cy="12" r="9" /><path d="m8 12 2.5 2.5 5-5" /></>}
     {name === "back" && <path d="m14 5-7 7 7 7" />}
     {name === "arrow" && <path d="m9 6 6 6-6 6" />}
+    {name === "link" && <><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></>}
   </svg>;
 }
