@@ -37,6 +37,17 @@ test('preserves multiple spaces, unassigned booths, and local feet coordinates',
   assert.equal(data.booths[2].status, 'available');
   assert.deepEqual(data.booths[0].bounds, { x: 0, y: 0, width: 10, height: 10 });
 });
+
+test('uses the curated careers URL for every company booth and rejects unsafe links', () => {
+  const data = normalizeFloorplan(...fixture(), '', 'test', [], { 'same-company': 'https://example.com/careers' });
+  assert.equal(data.companies[0].url, 'https://example.com/careers');
+  assert.equal(data.booths[0].url, data.companies[0].url);
+  assert.equal(data.booths[1].url, data.companies[0].url);
+  assert.equal(data.booths[2].url, null);
+  for (const item of [...data.companies, ...data.booths]) assert.ok(!Object.hasOwn(item, 'logoUrl'));
+  assert.equal(normalizeFloorplan(...fixture(), '', 'test').companies[0].url, null);
+  for (const url of ['javascript:alert(1)', '/careers', 'https://user:password@example.com']) assert.throws(() => normalizeFloorplan(...fixture(), '', 'test', [], { 'same-company': url }), /Invalid careers URL/);
+});
 test('converts venue labels and imagery with the same origin and scale as booths', () => {
   const args = fixture();
   args[0].Extent = { x: 3000, y: 4000 };

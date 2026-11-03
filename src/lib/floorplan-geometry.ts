@@ -31,6 +31,15 @@ export function safeImageUrl(value?: string | null): string | undefined {
   catch { return undefined; }
 }
 
+/** Careers links must be absolute web URLs, never local paths or scripts. */
+export function safeCareerUrl(value?: string | null): string | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  try {
+    const url = new URL(value);
+    return ["https:", "http:"].includes(url.protocol) && !url.username && !url.password ? url.href : undefined;
+  } catch { return undefined; }
+}
+
 export function validateFloorplan(value: unknown): asserts value is import("./floorplan-types").FloorplanData {
   const data = value as import("./floorplan-types").FloorplanData;
   if (!data || data.schemaVersion !== 1 || data.units !== "ft" || !Array.isArray(data.booths) || !data.booths.length || !Array.isArray(data.companies) || !data.bounds || ![data.bounds.x, data.bounds.y, data.bounds.width, data.bounds.height].every(Number.isFinite) || data.bounds.width <= 0 || data.bounds.height <= 0) throw new Error("Invalid floor-plan snapshot.");

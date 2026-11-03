@@ -1,7 +1,7 @@
 export type Point = [number, number];
 export type Bounds = { x: number; y: number; width: number; height: number };
 export type Transform = { x: number; y: number; scale: number };
-export type Company = { id: string; name: string; aliases: string[]; boothIds: string[]; logoUrl?: string | null };
+export type Company = { id: string; name: string; aliases: string[]; boothIds: string[]; url?: string | null };
 export type Booth = {
   id: string;
   number: string;
@@ -9,7 +9,7 @@ export type Booth = {
   status?: "rented" | "available" | "held";
   bounds?: Bounds;
   polygons: Point[][];
-  logoUrl?: string | null;
+  url?: string | null;
   spaceType: string;
   spaceLabel?: string;
 };

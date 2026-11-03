@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Booth, Bounds, Company, FloorplanData } from "@/lib/floorplan-types";
+import type { Booth, Bounds, Company, FloorplanData, Point } from "@/lib/floorplan-types";
 import { getBounds, safeImageUrl, unionBounds, validateFloorplan } from "@/lib/floorplan-geometry";
 import { createD3ZoomEngine, fittedViewBox } from "@/utils/d3ZoomEngine";
 import type { D3ZoomEngine, SettledView } from "@/utils/d3ZoomEngine";
@@ -27,6 +27,12 @@ export type FloorPlanProps = {
   onDeselectBooth?: () => void;
   onDataLoad?: (data: FloorplanData) => void;
   onEngineReady?: (engine: D3ZoomEngine | null) => void;
+  pointSelection?: boolean;
+  onMapPoint?: (point: Point, pixelsPerUnit: number) => void;
+  onCancelPlacement?: () => void;
+  routePoints?: Point[];
+  routeFitRevision?: number;
+  mapOverlay?: React.ReactNode;
 };
 
 export default function FloorPlan({ dataUrl = "/data/booths.json", area = "main", onDataLoad, ...props }: FloorPlanProps) {
@@ -50,7 +56,7 @@ export default function FloorPlan({ dataUrl = "/data/booths.json", area = "main"
   return <MapSurface key={`${dataUrl}-${area}`} data={data} {...props} />;
 }
 
-function MapSurface({ data, selectedBoothId, onSelectBooth, onDeselectBooth, focusRequest, matchingBoothIds, savedCompanyIds, visitedCompanyIds, minZoom = 1.0, maxZoom = 8, detailThreshold = 1.8, onEngineReady }: Omit<FloorPlanProps, "dataUrl" | "onDataLoad"> & { data: FloorplanData }) {
+function MapSurface({ data, selectedBoothId, onSelectBooth, onDeselectBooth, focusRequest, matchingBoothIds, savedCompanyIds, visitedCompanyIds, minZoom = 1.0, maxZoom = 8, detailThreshold = 1.8, onEngineReady, pointSelection = false, onMapPoint, onCancelPlacement, routePoints, routeFitRevision = 0, mapOverlay }: Omit<FloorPlanProps, "dataUrl" | "onDataLoad"> & { data: FloorplanData }) {
   const stage = useRef<HTMLDivElement>(null);
   const camera = useRef<HTMLDivElement>(null);
   const fit = useRef<HTMLDivElement>(null);
@@ -60,8 +66,9 @@ function MapSurface({ data, selectedBoothId, onSelectBooth, onDeselectBooth, foc
   const zoomInButton = useRef<HTMLButtonElement>(null);
   const zoomOutButton = useRef<HTMLButtonElement>(null);
   const engine = useRef<D3ZoomEngine | null>(null);
-  const callbacks = useRef({ onSelectBooth, onDeselectBooth, onEngineReady });
-  useEffect(() => { callbacks.current = { onSelectBooth, onDeselectBooth, onEngineReady }; }, [onSelectBooth, onDeselectBooth, onEngineReady]);
+  const callbacks = useRef({ onSelectBooth, onDeselectBooth, onEngineReady, onMapPoint });
+  useEffect(() => { callbacks.current = { onSelectBooth, onDeselectBooth, onEngineReady, onMapPoint }; }, [onSelectBooth, onDeselectBooth, onEngineReady, onMapPoint]);
+  const [crosshair, setCrosshair] = useState({ x: 0.5, y: 0.5 });
   const [internalSelection, setInternalSelection] = useState<string | null>(null);
   const showLabels = true;
   const [backdropFailed, setBackdropFailed] = useState(false);
@@ -90,6 +97,7 @@ function MapSurface({ data, selectedBoothId, onSelectBooth, onDeselectBooth, foc
     if (!stage.current || !camera.current || !fit.current || !boothLayer.current || !backdropLayer.current || !labelLayer.current || !zoomInButton.current || !zoomOutButton.current) return;
     const controller = createD3ZoomEngine(stage.current, camera.current, {
       bounds: sceneBounds, minZoom, maxZoom, detailThreshold, onSelectBooth: select, onDeselectBooth: deselect, onViewSettle: settle,
+      onMapPoint: (point, scale) => callbacks.current.onMapPoint?.(point, scale),
       fit: fit.current, booths: boothLayer.current, backdrop: backdropLayer.current, labels: labelLayer.current,
       controls: { zoomIn: zoomInButton.current, zoomOut: zoomOutButton.current },
     });
@@ -97,6 +105,10 @@ function MapSurface({ data, selectedBoothId, onSelectBooth, onDeselectBooth, foc
     callbacks.current.onEngineReady?.(controller);
     return () => { controller.destroy(); engine.current = null; callbacks.current.onEngineReady?.(null); };
   }, [sceneBounds, minZoom, maxZoom, detailThreshold, select, deselect, settle]);
+  useEffect(() => {
+    engine.current?.setPointSelection(pointSelection);
+    if (pointSelection) stage.current?.focus({ preventScroll: true });
+  }, [pointSelection, sceneBounds, minZoom, maxZoom, detailThreshold]);
   useEffect(() => {
     if (!focusRequest) return;
     const shape = shapes.find(({ booth }) => booth.id === focusRequest.boothId);
@@ -106,6 +118,11 @@ function MapSurface({ data, selectedBoothId, onSelectBooth, onDeselectBooth, foc
     const padding = Math.max(35, Math.max(width, height) * 0.75);
     engine.current?.fitBounds(x - padding, y - padding, x + width + padding, y + height + padding);
   }, [focusRequest, shapes, sceneBounds, minZoom, maxZoom, detailThreshold]);
+  useEffect(() => {
+    if (!routePoints?.length) return;
+    const xs = routePoints.map(p => p[0]), ys = routePoints.map(p => p[1]);
+    engine.current?.fitBounds(Math.min(...xs) - 25, Math.min(...ys) - 25, Math.max(...xs) + 25, Math.max(...ys) + 25);
+  }, [routePoints, routeFitRevision]);
 
   return <div className={styles.container} data-selected={Boolean(selected)} data-show-labels={showLabels}>
     <div className={styles.controls} role="group" aria-label="Floor plan controls">
@@ -117,7 +134,18 @@ function MapSurface({ data, selectedBoothId, onSelectBooth, onDeselectBooth, foc
     </div>
     {/* D3 listens on the stage (CSS-pixel extent). Only the camera div is transformed;
         it is an HTML box, so the browser composites it rather than re-laying-out SVG. */}
-    <div id="floorplan-stage" ref={stage} className={styles.stage} role="group" aria-label={`${data.area === "interview" ? "WE26 interview booths" : "WE26 main booths"} floor plan. Drag to pan, scroll or pinch to zoom. Tab to booths; Enter selects. Arrow keys pan.`} tabIndex={0}>
+    <div id="floorplan-stage" ref={stage} className={styles.stage} data-placing={pointSelection} role="group" aria-label={`${data.area === "interview" ? "WE26 interview booths" : "WE26 main booths"} floor plan. ${pointSelection ? "Tap inside a booth or near an aisle to place a point. Arrow keys move the crosshair; Enter confirms; Escape cancels." : "Drag to pan, scroll or pinch to zoom. Tab to booths; Enter selects. Arrow keys pan."}`} tabIndex={0} onKeyDownCapture={event => {
+      if (!pointSelection) return;
+      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onCancelPlacement?.(); }
+      else if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter"].includes(event.key)) {
+        event.preventDefault(); event.stopPropagation();
+        const rect = stage.current!.getBoundingClientRect();
+        if (event.key === "Enter") {
+          const point = engine.current?.screenToMap(crosshair.x * rect.width, crosshair.y * rect.height);
+          if (point) onMapPoint?.(point, engine.current!.getDisplayedPixelsPerUnit());
+        } else setCrosshair(p => ({ x: Math.max(0, Math.min(1, p.x + (event.key === "ArrowLeft" ? -12 : event.key === "ArrowRight" ? 12 : 0) / Math.max(1, rect.width))), y: Math.max(0, Math.min(1, p.y + (event.key === "ArrowUp" ? -12 : event.key === "ArrowDown" ? 12 : 0) / Math.max(1, rect.height))) }));
+      }
+    }}>
       <div ref={camera} className={styles.camera}>
         <div ref={fit} className={styles.fit}>
           {backdrop && imageClip && !backdropFailed && <div className={styles.imageClip} style={percentBox(imageClip, viewBox)} aria-hidden="true">
@@ -140,8 +168,18 @@ function MapSurface({ data, selectedBoothId, onSelectBooth, onDeselectBooth, foc
           <svg id="booth-status" className={`${styles.layer} ${styles.labelViewport}`} viewBox={viewBoxAttr} preserveAspectRatio="none" aria-hidden="true">
             {shapes.filter(({ booth }) => booth.companyId && view?.visibleIds.has(booth.id) && (savedCompanyIds?.has(booth.companyId) || visitedCompanyIds?.has(booth.companyId))).map(({ booth, bounds }) => <circle key={booth.id} data-company-marker={booth.companyId} className={`${visitedCompanyIds?.has(booth.companyId!) ? styles.visitedMarker : styles.savedMarker} ${matchingBoothIds && !matchingBoothIds.has(booth.id) ? styles.dimmed : ""}`} cx={bounds.x + bounds.width / 2} cy={bounds.y + bounds.height * .84} r=".01" strokeWidth="10" vectorEffect="non-scaling-stroke" />)}
           </svg>
+          <svg id="walking-route" className={`${styles.layer} ${styles.labelViewport}`} viewBox={viewBoxAttr} preserveAspectRatio="none" aria-hidden="true">
+            {routePoints && routePoints.length > 0 && <>
+              <polyline points={routePoints.map(p => p.join(",")).join(" ")} fill="none" stroke="white" strokeWidth="9" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
+              <polyline points={routePoints.map(p => p.join(",")).join(" ")} fill="none" stroke="#165dcc" strokeWidth="5" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
+              <circle cx={routePoints[0][0]} cy={routePoints[0][1]} r=".01" stroke="#165dcc" strokeWidth="16" vectorEffect="non-scaling-stroke" />
+              <circle cx={routePoints.at(-1)![0]} cy={routePoints.at(-1)![1]} r=".01" stroke="#bd321e" strokeWidth="16" vectorEffect="non-scaling-stroke" />
+            </>}
+            {mapOverlay}
+          </svg>
         </div>
       </div>
+      {pointSelection && <span className={styles.placementCrosshair} style={{ left: `${crosshair.x * 100}%`, top: `${crosshair.y * 100}%` }} aria-hidden="true">+</span>}
     </div>
     {(!data.hallStructure?.backdrop || backdropFailed) && <p className={styles.warning} role="status">Venue backdrop unavailable. Booth geometry remains visible.</p>}
   </div>;

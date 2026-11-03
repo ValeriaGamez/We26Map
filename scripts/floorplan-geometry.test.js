@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
-import { fitTransform, getBounds, safeImageUrl, validateFloorplan, zoomAt } from '../src/lib/floorplan-geometry.ts';
+import { fitTransform, getBounds, safeCareerUrl, safeImageUrl, validateFloorplan, zoomAt } from '../src/lib/floorplan-geometry.ts';
 const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-8, `${a} differs from ${b}`);
 
 test('fits nonzero-origin geometry in portrait and landscape viewports', () => {
@@ -36,6 +36,11 @@ test('only permits ordinary local or HTTP(S) image URLs', () => {
   assert.equal(safeImageUrl('javascript:alert(1)'), undefined);
   assert.equal(safeImageUrl('//untrusted.example/logo.png'), undefined);
 });
+
+test('careers links accept only absolute web URLs without embedded credentials', () => {
+  assert.equal(safeCareerUrl('https://example.com/careers'), 'https://example.com/careers');
+  for (const url of [null, '', '/careers', '//example.com/jobs', 'javascript:alert(1)', 'data:text/html,bad', 'https://name:secret@example.com']) assert.equal(safeCareerUrl(url), undefined);
+});
 test('generated snapshot maps every assigned booth and has aligned structural assets', () => {
   const data = JSON.parse(readFileSync(new URL('../public/data/booths.json', import.meta.url), 'utf8'));
   validateFloorplan(data);
@@ -43,7 +48,10 @@ test('generated snapshot maps every assigned booth and has aligned structural as
     const bounds = getBounds(booth.polygons);
     for (const key of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(bounds[key] - booth.bounds[key]) <= 0.000002);
     assert.ok(['rented', 'held', 'available'].includes(booth.status));
-    if (booth.logoUrl) assert.ok(existsSync(new URL(`../public${booth.logoUrl}`, import.meta.url)));
+    assert.ok(!Object.hasOwn(booth, 'logoUrl'));
+    const company = data.companies.find(company => company.id === booth.companyId);
+    assert.equal(booth.url, company?.url ?? null);
+    if (booth.url) assert.ok(['https:', 'http:'].includes(new URL(booth.url).protocol));
   }
   const backdrop = data.hallStructure.backdrop;
   assert.ok(existsSync(new URL(`../public${backdrop.href}`, import.meta.url)));

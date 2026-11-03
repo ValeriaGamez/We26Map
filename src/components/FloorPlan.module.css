@@ -6,6 +6,8 @@
 .fit { position: absolute; }
 .layer { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; display: block; }
 .labelViewport { pointer-events: none; }
+.stage[data-placing=true] { cursor: crosshair; }
+.placementCrosshair { position: absolute; transform: translate(-50%, -50%); display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: white; color: #165dcc; border: 2px solid #165dcc; font: bold 24px/1 system-ui; pointer-events: none; box-shadow: 0 1px 4px #0005; }
 .backdrop, :global(#venue-backdrop) { pointer-events: none; user-select: none; -webkit-user-select: none; }
 .imageClip { position: absolute; overflow: hidden; pointer-events: none; user-select: none; -webkit-user-select: none; }
 .venueImage { position: absolute; display: block; max-width: none; pointer-events: none; user-select: none; -webkit-user-select: none; -webkit-user-drag: none; }

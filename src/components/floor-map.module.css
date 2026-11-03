@@ -31,6 +31,8 @@
 .back { display: inline-flex; align-items: center; gap: 2px; min-height: 44px; padding: 0; margin: -8px 0 12px -4px; color: var(--accent); border: 0; border-radius: 8px; background: transparent; font-size: 14px; font-weight: 550; cursor: pointer; }
 .back svg { width: 20px; height: 20px; }
 .placeCard .subtitle { margin-bottom: 24px; }
+.careerLink { color: inherit; text-decoration: underline; text-decoration-color: #674d8766; text-underline-offset: 4px; }
+.careerLink:hover { color: var(--accent); }.careerLink span { font-size: .65em; white-space: nowrap; }
 .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 28px; }
 .actions button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; min-height: 64px; padding: 8px; border: 1px solid rgba(255,255,255,.65); border-radius: 14px; background: rgba(255,255,255,.48); color: var(--accent); font-size: 13px; font-weight: 600; cursor: pointer; }
 .actions button[aria-pressed=true] { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -43,6 +45,15 @@
 .locations button { min-width: 44px; min-height: 44px; padding: 8px 12px; border: 1px solid rgba(255,255,255,.65); border-radius: 12px; background: rgba(255,255,255,.4); color: var(--accent); font-size: 14px; font-weight: 550; cursor: pointer; }
 .locations button[aria-pressed=true] { border-color: var(--accent); }
 .storageStatus { font-size: 12px; margin-top: 16px; color: var(--secondary); }
+.directionsAction { margin: 0 0 24px; }
+.directionsAction > button { display: block; margin-inline: auto; }
+.directionsAction button, .directionsPanel button { min-height: 44px; padding: 8px 14px; border: 1px solid #165dcc; border-radius: 12px; background: white; color: #165dcc; font: inherit; cursor: pointer; }
+.directionsAction button:disabled { opacity: .5; cursor: default; }
+.directionsAction p { margin-top: 8px; font-size: 13px; line-height: 1.5; color: var(--secondary); }
+.directionsPanel { position: absolute; z-index: 6; top: 76px; right: 76px; max-width: min(360px, calc(100% - 100px)); padding: 14px; border-radius: 16px; background: #fffffff5; box-shadow: 0 2px 12px #0002; color: #242428; }
+.directionsPanel p { font-size: 14px; line-height: 1.5; margin: 0 0 8px; }
+.directionsPanel > div { display: flex; flex-wrap: wrap; gap: 6px; }
+@media (max-width: 639px) { .directionsPanel { left: 12px; right: 72px; top: 72px; max-width: none; padding: 10px; } }
 .sourceLink { display: inline-flex; align-items: center; min-height: 44px; margin-top: 12px; font-size: 12px; color: var(--secondary); text-decoration: none; }
 .empty { padding: 24px 4px; font-size: 15px; line-height: 1.5; }.empty p { margin-top: 6px; font-size: 13px; color: var(--secondary); }
 .floorSwitch { position: absolute; z-index: 5; left: 50%; top: 12px; transform: translateX(-50%); display: flex; padding: 4px; gap: 2px; border-radius: 28px; }

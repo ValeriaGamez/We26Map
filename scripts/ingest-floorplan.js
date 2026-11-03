@@ -1,7 +1,6 @@
-import { mkdir, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createHash } from 'node:crypto';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const host = 'https://swe.expocad.com';
@@ -19,11 +18,6 @@ export function polygonBounds(polygons) {
   const points = polygons.flat();
   const x = Math.min(...points.map((p) => p[0])), y = Math.min(...points.map((p) => p[1]));
   return { x, y, width: round(Math.max(...points.map((p) => p[0])) - x), height: round(Math.max(...points.map((p) => p[1])) - y) };
-}
-function imageUrl(value) {
-  if (typeof value !== 'string' || !value.trim()) return null;
-  const url = new URL(value, sources.viewer);
-  return ['https:', 'http:'].includes(url.protocol) ? url.href : null;
 }
 const median = (values) => {
   const sorted = [...values].sort((a, b) => a - b);
@@ -89,7 +83,7 @@ export function inferScale(booths) {
   return { unitsPerFoot, method: 'median edge length of source-labeled 10x10 ft square booths', calibrationBooths: candidates.length, inlierBooths: inliers.length, tolerancePercent: 2 };
 }
 
-export function normalizeFloorplan(rawGeometry, rawLists, rawConfig, loader, fetchedAt = new Date().toISOString(), structuralLabels = []) {
+export function normalizeFloorplan(rawGeometry, rawLists, rawConfig, loader, fetchedAt = new Date().toISOString(), structuralLabels = [], careerUrls = {}) {
   const geometry = first(rawGeometry), lists = first(rawLists), config = first(rawConfig);
   if (!geometry?.booths?.length || !Array.isArray(lists?.exhibitors)) throw new Error('Unexpected EXPOCAD dataset shape.');
   const decode = makeDecoder(loader, config?.bDataEncrypted);
@@ -113,7 +107,6 @@ export function normalizeFloorplan(rawGeometry, rawLists, rawConfig, loader, fet
     variants.set(name, (variants.get(name) ?? 0) + 1);
   }
   const companies = new Map(), numbers = new Set();
-  const overlays = new Map((geometry.overlays?.eventOverlays ?? []).filter((overlay) => overlay.type === 3 && overlay.boothNum && overlay.img).map((overlay) => [String(overlay.boothNum), imageUrl(overlay.img)]));
   const booths = records.map(({ source, polygons }) => {
     const number = String(source.boothNumber ?? '').trim();
     if (!number || numbers.has(number)) throw new Error(`Missing or duplicate booth number: ${number}`);
@@ -131,13 +124,19 @@ export function normalizeFloorplan(rawGeometry, rawLists, rawConfig, loader, fet
           const queue = (value) => /\b(queue|line space|line-up)\b/i.test(value);
           return Number(queue(a[0])) - Number(queue(b[0])) || b[1] - a[1] || a[0].localeCompare(b[0]);
         });
-        companies.set(companyId, { id: companyId, name: variants[0][0], aliases: variants.slice(1).map(([variant]) => variant), logoUrl: imageUrl(assignment.companyLogo), boothIds: [] });
+        const url = careerUrls[companyId] ?? null;
+        if (url !== null) {
+          let parsed;
+          try { parsed = new URL(url); } catch { throw new Error(`Invalid careers URL for ${companyId}.`); }
+          if (!['https:', 'http:'].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error(`Invalid careers URL for ${companyId}.`);
+        }
+        companies.set(companyId, { id: companyId, name: variants[0][0], aliases: variants.slice(1).map(([variant]) => variant), url, boothIds: [] });
       }
       companies.get(companyId).boothIds.push(id);
     }
     const feetPolygons = polygons.map((polygon) => polygon.map(toFeet));
     const status = ({ '0': 'available', '1': 'held', '2': 'rented' })[String(source.status)] ?? (companyId ? 'rented' : 'available');
-    return { id, number, companyId, status, bounds: polygonBounds(feetPolygons), logoUrl: overlays.get(number) ?? imageUrl(assignment?.companyLogo), ...(companyId && name !== companies.get(companyId).name ? { spaceLabel: name } : {}), spaceType: /\b(queue|line space|line-up)\b/i.test(name) ? 'queue' : 'unclassified', polygons: feetPolygons };
+    return { id, number, companyId, status, bounds: polygonBounds(feetPolygons), url: companyId ? companies.get(companyId).url : null, ...(companyId && name !== companies.get(companyId).name ? { spaceLabel: name } : {}), spaceType: /\b(queue|line space|line-up)\b/i.test(name) ? 'queue' : 'unclassified', polygons: feetPolygons };
   });
   if (assignments.size) throw new Error(`${assignments.size} company assignments have no matching geometry.`);
   booths.sort((a, b) => a.number.localeCompare(b.number, 'en', { numeric: true }));
@@ -174,7 +173,9 @@ export async function ingest() {
   const [geometry, lists, config, loader, structuralLabels] = await Promise.all([
     request(sources.geometry), request(sources.companies, 'POST'), request(sources.config), request(sources.loader, 'GET', false), request(sources.structuralLabels),
   ]);
-  const output = normalizeFloorplan(geometry, lists, config, loader, new Date().toISOString(), structuralLabels);
+  const careerCatalog = JSON.parse(await readFile(new URL('./company-careers.json', import.meta.url), 'utf8'));
+  const careerUrls = Object.fromEntries(Object.entries(careerCatalog).map(([id, entry]) => [id, entry.url]));
+  const output = normalizeFloorplan(geometry, lists, config, loader, new Date().toISOString(), structuralLabels, careerUrls);
   const target = resolve(root, 'public/data/booths.json');
   await mkdir(dirname(target), { recursive: true });
   async function saveImage(url, name) {
@@ -190,17 +191,6 @@ export async function ingest() {
     return `/data/${name}.${extension}`;
   }
   if (output.hallStructure.backdrop) output.hallStructure.backdrop.href = await saveImage(sources.backdrop, 'venue');
-  const imageUrls = [...new Set([...output.booths, ...output.companies].map((item) => item.logoUrl).filter(Boolean))];
-  const localImages = new Map();
-  // Bounded batches keep the public source load low. An unavailable logo falls
-  // back to its booth label and cannot prevent the complete map from loading.
-  for (let i = 0; i < imageUrls.length; i += 5) {
-    await Promise.all(imageUrls.slice(i, i + 5).map(async (url) => {
-      try { localImages.set(url, await saveImage(url, `logos/${createHash('sha256').update(url).digest('hex').slice(0, 16)}`)); }
-      catch (error) { console.warn(`Skipping unavailable booth image: ${error.message}`); localImages.set(url, null); }
-    }));
-  }
-  for (const item of [...output.booths, ...output.companies]) if (item.logoUrl) item.logoUrl = localImages.get(item.logoUrl) ?? null;
   // Replace only after the entire dataset passes validation. Failed ingestion
   // leaves the previous usable snapshot in place.
   await writeFile(`${target}.tmp`, `${JSON.stringify(output)}\n`, 'utf8');

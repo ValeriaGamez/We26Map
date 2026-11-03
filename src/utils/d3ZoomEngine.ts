@@ -65,6 +65,7 @@ export type D3ZoomOptions = {
   onSelectBooth?: (id: string) => void;
   onDeselectBooth?: () => void;
   onViewSettle?: (view: SettledView) => void;
+  onMapPoint?: (point: [number, number], pixelsPerUnit: number) => void;
   controls?: { zoomIn: HTMLButtonElement; zoomOut: HTMLButtonElement; indicator?: HTMLOutputElement };
 };
 
@@ -360,8 +361,18 @@ export function createD3ZoomEngine(stage: HTMLElement, camera: HTMLElement, opti
     const box = { x: projectX(minX), y: projectY(minY), width: (maxX - minX) * frame.pixelsPerUnit, height: (maxY - minY) * frame.pixelsPerUnit };
     transformTo(focusTransform({ x: 0, y: 0, width: frame.width, height: frame.height }, box, min, max), 300, motion);
   }
+  let pointSelection = false;
+  function screenToMap(x: number, y: number): [number, number] {
+    const world = currentView.invert([x, y]);
+    return [viewBox.x + (world[0] - frame.offsetX) / frame.pixelsPerUnit, viewBox.y + (world[1] - frame.offsetY) / frame.pixelsPerUnit];
+  }
   selection.on("click.floorplan", (event: MouseEvent) => {
     if (destroyed || event.detail === 0 || event.defaultPrevented) return;
+    if (pointSelection) {
+      const [x, y] = pointer(event, stage);
+      options.onMapPoint?.(screenToMap(x, y), frame.pixelsPerUnit * currentView.k);
+      return;
+    }
     const target = event.target as Element | null;
     const hit = target?.closest?.("[data-booth-id]");
     if (hit && stage.contains(hit)) options.onSelectBooth?.(hit.getAttribute("data-booth-id")!);
@@ -388,6 +399,9 @@ export function createD3ZoomEngine(stage: HTMLElement, camera: HTMLElement, opti
     zoomIn: (motion?: MotionOptions) => scaleBy(1.25, motion),
     zoomOut: (motion?: MotionOptions) => scaleBy(0.8, motion),
     resetView, fitBounds,
+    screenToMap,
+    getDisplayedPixelsPerUnit: () => frame.pixelsPerUnit * currentView.k,
+    setPointSelection: (enabled: boolean) => { pointSelection = enabled; },
     getTransform: () => zoomTransform(stage),
     getZoom: () => zoomTransform(stage).k,
     getFrame: () => frame,

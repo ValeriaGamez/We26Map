@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "update:careers": "node scripts/update-career-links.mjs",
+    "test:routing": "node --test scripts/routing.test.mjs scripts/routing-ui.test.js scripts/routing-map.test.mjs scripts/routing-surface.test.js",
+    "check:routing": "node scripts/check-routing.mjs",
     "ingest:floorplan": "node scripts/ingest-floorplan.js",
     "build:fresh": "npm run ingest:floorplan && next build",
     "test:floorplan": "node --test scripts/ingest-floorplan.test.js scripts/floorplan-geometry.test.js scripts/floorplan-area.test.js scripts/d3-zoom.test.js scripts/floorplan-labels.test.js scripts/explorer-panel.test.js scripts/company-planner.test.js",

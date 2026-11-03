@@ -5,8 +5,10 @@ import Link from "next/link";
 import FloorPlan from "./FloorPlan";
 import ExplorerSheet, { usePhoneLayout } from "./explorer-sheet";
 import Icon from "./explorer-icons";
+import { useBoothDirections } from "./use-booth-directions";
 import { EMPTY_COMPANY, preferenceSnapshot, serverPreferenceSnapshot, subscribePreferences, updateCompanyPreference } from "@/lib/company-preferences";
 import { walkingOrder } from "@/lib/walking-order";
+import { safeCareerUrl } from "@/lib/floorplan-geometry";
 import type { FloorplanData } from "@/lib/floorplan-types";
 import type { FloorplanArea } from "@/lib/floorplan-area";
 import styles from "./floor-map.module.css";
@@ -21,6 +23,7 @@ export default function FloorMap({ area = "main" }: { area?: FloorplanArea }) {
   const [focusRequest, setFocusRequest] = useState<{ boothId: string; revision: number } | null>(null);
   const [sheetExpanded, setSheetExpanded] = useState(false);
   const phone = usePhoneLayout();
+  const directions = useBoothDirections(data, area);
   const preferences = useSyncExternalStore(subscribePreferences, preferenceSnapshot, serverPreferenceSnapshot);
   const search = useRef<HTMLInputElement>(null);
   const back = useRef<HTMLButtonElement>(null);
@@ -31,6 +34,7 @@ export default function FloorMap({ area = "main" }: { area?: FloorplanArea }) {
   const booths = useMemo(() => new Map(data?.booths.map(booth => [booth.id, booth]) ?? []), [data]);
   const selected = selectedId ? booths.get(selectedId) : undefined;
   const company = data?.companies.find(item => item.id === selected?.companyId);
+  const careerUrl = safeCareerUrl(company?.url ?? selected?.url);
   const companyState = company && Object.hasOwn(preferences.companies, company.id) ? preferences.companies[company.id] : EMPTY_COMPANY;
   const savedIds = useMemo(() => new Set(Object.entries(preferences.companies).filter(([, item]) => item.saved).map(([id]) => id)), [preferences.companies]);
   const visitedIds = useMemo(() => new Set(Object.entries(preferences.companies).filter(([, item]) => item.visited).map(([id]) => id)), [preferences.companies]);
@@ -49,6 +53,7 @@ export default function FloorMap({ area = "main" }: { area?: FloorplanArea }) {
   function locate(id: string) {
     if (!selected) previousScroll.current = scroll.current?.scrollTop ?? 0;
     setSelectedId(id);
+    if (directions.active) directions.begin(id);
     setFocusRequest(previous => ({ boothId: id, revision: (previous?.revision ?? 0) + 1 }));
     if (phone) { search.current?.blur(); setSheetExpanded(false); }
   }
@@ -64,7 +69,15 @@ export default function FloorMap({ area = "main" }: { area?: FloorplanArea }) {
 
   return <main className={styles.app} data-sheet-expanded={sheetExpanded}>
     <section className={styles.mapSection} inert={phone && sheetExpanded} aria-label={area === "interview" ? "WE26 interview booth map" : "WE26 main booth map"}>
-      <FloorPlan key={area} area={area} onDataLoad={setData} selectedBoothId={selectedId} focusRequest={focusRequest} onSelectBooth={locate} onDeselectBooth={deselect} matchingBoothIds={matchingBooths} savedCompanyIds={savedIds} visitedCompanyIds={visitedIds} />
+      <FloorPlan key={area} area={area} onDataLoad={setData} selectedBoothId={selectedId} focusRequest={focusRequest} onSelectBooth={locate} onDeselectBooth={deselect} matchingBoothIds={matchingBooths} savedCompanyIds={savedIds} visitedCompanyIds={visitedIds} pointSelection={directions.placing} onMapPoint={directions.place} onCancelPlacement={directions.cancelPlacement} routePoints={directions.route?.points} routeFitRevision={directions.fitRevision} />
+      {directions.active && <div className={styles.directionsPanel} aria-label="Walking directions">
+        <p role="status" aria-live="polite">{directions.message}</p>
+        <div>
+          {directions.route && !directions.placing && <><button onClick={directions.moveStart}>Move start</button><button onClick={directions.fitRoute}>Fit route</button></>}
+          {directions.placing && <button onClick={directions.cancelPlacement}>Cancel placement</button>}
+          <button onClick={directions.clear}>Clear route</button>
+        </div>
+      </div>}
     </section>
     <nav className={styles.floorSwitch} inert={phone && sheetExpanded} aria-label="Floor map views">
       <Link href="/" aria-current={area === "main" ? "page" : undefined}>Main Floor</Link>
@@ -74,11 +87,15 @@ export default function FloorMap({ area = "main" }: { area?: FloorplanArea }) {
       <div id="explorer-panel-content" ref={scroll} className={styles.panelContent} onKeyDown={event => { if (event.key === "Escape") { if (selected) returnToBrowse(); else if (phone) setSheetExpanded(false); } }}>
         {selected ? <section className={styles.placeCard} aria-label="Selected booth details">
           <button ref={back} className={styles.back} onClick={returnToBrowse}><Icon name="back" /><span>{tab === "all" ? "All companies" : tab === "saved" ? "Saved" : "Route"}</span></button>
-          <h1>{company?.name ?? "Available booth"}</h1>
+          <h1>{company && careerUrl ? <a className={styles.careerLink} href={careerUrl} target="_blank" rel="noopener noreferrer" aria-label={`${company.name} careers (opens in a new tab)`}>{company.name} <span aria-hidden="true">↗</span></a> : company?.name ?? "Available booth"}</h1>
           <p className={styles.subtitle}>Booth {company ? company.boothIds.map(id => booths.get(id)?.number).join(" · ") : selected.number}</p>
           <div className={styles.actions}>
             <button type="button" aria-pressed={companyState.saved} disabled={!company} onClick={() => company && updateCompanyPreference(company.id, { saved: !companyState.saved })}><Icon name="star" filled={companyState.saved} /><span>{companyState.saved ? "Saved" : "Save"}</span></button>
             <button type="button" aria-pressed={companyState.visited} disabled={!company} onClick={() => company && updateCompanyPreference(company.id, { visited: !companyState.visited })}><Icon name="check" /><span>{companyState.visited ? "Visited" : "Mark Visited"}</span></button>
+          </div>
+          <div className={styles.directionsAction}>
+            <button type="button" disabled={!directions.supported(selected.id)} aria-describedby={!directions.supported(selected.id) ? "directions-availability" : undefined} onClick={() => { directions.begin(selected.id); if (phone) setSheetExpanded(false); }}>Directions here · Booth {selected.number}</button>
+            {!directions.supported(selected.id) && <p id="directions-availability">{directions.availability || "Directions are not available for this booth."}</p>}
           </div>
           {company && <div className={styles.notes}><label htmlFor="company-notes">Notes</label><textarea id="company-notes" placeholder="Recruiter names, conversations, follow-ups…" value={companyState.notes} onFocus={() => phone && setSheetExpanded(true)} onChange={event => updateCompanyPreference(company.id, { notes: event.target.value })} /></div>}
           {company && company.boothIds.length > 1 && <div className={styles.locations}><h2>Booth locations</h2><div>{company.boothIds.map(id => <button key={id} aria-pressed={id === selectedId} onClick={() => locate(id)}>{booths.get(id)?.number}</button>)}</div></div>}
