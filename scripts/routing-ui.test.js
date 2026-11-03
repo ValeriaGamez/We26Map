@@ -67,9 +67,9 @@ test('directions target the exact booth, snap the start, recalculate, move, fit,
     await f.click(f.button('Directions here'));assert.equal(f.props.pointSelection,true);assert.match(f.text(),/Place your starting pin/);
     await f.place([10,33],2);assert.equal(f.props.pointSelection,true);assert.match(f.text(),/closer to a mapped aisle/);
     await f.place([10,32],2);assert.equal(f.props.pointSelection,false);assert.deepEqual(f.props.routePoints,[[10,20],[45,20],[45,10]]);
-    assert.match(f.text(),/To booth 101.*45 ft/);
+    assert.equal(f.find('.directionsPanel [role="status"]').textContent,'To One company');
     const revision=f.props.routeFitRevision;await f.click(f.button('Fit route'));assert.ok(f.props.routeFitRevision>revision);
-    await f.select('b');assert.deepEqual(f.props.routePoints.at(-1),[85,10]);assert.match(f.text(),/To booth 102.*85 ft/);
+    await f.select('b');assert.deepEqual(f.props.routePoints.at(-1),[85,10]);assert.equal(f.find('.directionsPanel [role="status"]').textContent,'To One company');
     await f.click(f.button('Move start'));assert.equal(f.props.pointSelection,true);
     await act(async()=>f.props.onCancelPlacement());assert.equal(f.props.pointSelection,false);assert.ok(f.props.routePoints);
     await f.click(f.button('Clear route'));assert.equal(f.props.routePoints,undefined);
@@ -87,8 +87,8 @@ test('users can pin inside a booth, retain that start across destinations, and m
     await f.place([45,5],100);
     assert.equal(f.props.pointSelection,false);
     assert.deepEqual(f.props.routePoints,[[45,5],[45,10],[45,20],[85,20],[85,10]]);
-    assert.match(f.text(),/65 ft/);
-    await f.select('a');assert.deepEqual(f.props.routePoints,[[45,5],[45,10]]);assert.match(f.text(),/5 ft/);
+    assert.equal(f.find('.directionsPanel [role="status"]').textContent,'To One company');
+    await f.select('a');assert.deepEqual(f.props.routePoints,[[45,5],[45,10]]);assert.equal(f.find('.directionsPanel [role="status"]').textContent,'To One company');
     await f.click(f.button('Move start'));await f.place([10,20],2);
     assert.deepEqual(f.props.routePoints,[[10,20],[45,20],[45,10]]);
   }finally{await f.close();}

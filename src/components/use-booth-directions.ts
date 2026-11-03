@@ -32,6 +32,7 @@ export function useBoothDirections(data: FloorplanData | null, area: FloorplanAr
   const result = useMemo(() => graph && start && target ? routeFromPin(graph, start, target, data?.booths) : null, [graph, start, target, data]);
   const route = result?.ok ? result.route : undefined;
   const destination = data?.booths.find(b => b.id === target);
+  const destinationName = data?.companies.find(company => company.id === destination?.companyId)?.name ?? destination?.spaceLabel ?? "your destination";
   function supported(id: string) { return Boolean(graph?.nodes.some(n => n.boothId === id)); }
   function begin(id: string) {
     setTarget(id); setPlacementError("");
@@ -47,7 +48,7 @@ export function useBoothDirections(data: FloorplanData | null, area: FloorplanAr
     setStart(placement.start); setPlacing(false); setPlacementError(""); setFitRevision(v => v + 1);
   }
   function clear() { setTarget(null); setStart(null); setPlacing(false); setPlacementError(""); }
-  const message = placementError || (placing ? "Place your starting pin inside a booth or near an aisle. Arrow keys move the crosshair; Enter places it; Escape cancels." : result && !result.ok ? result.reason : target && !supported(target) ? availability || "Directions are not available for this booth." : route ? `To booth ${destination?.number ?? ""} · approximately ${Math.round(route.distance)} ft` : "");
+  const message = placementError || (placing ? "Place your starting pin inside a booth or near an aisle. Arrow keys move the crosshair; Enter places it; Escape cancels." : result && !result.ok ? result.reason : target && !supported(target) ? availability || "Directions are not available for this booth." : route ? `To ${destinationName}` : "");
   return { supported, availability, active: target !== null, route, placing, message, fitRevision, begin, place, clear,
     moveStart: () => { setPlacementError(""); setPlacing(true); },
     cancelPlacement: () => { setPlacementError(""); setPlacing(false); if (!start) setTarget(null); },
