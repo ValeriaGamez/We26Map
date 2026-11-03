@@ -94,6 +94,7 @@ export function createD3ZoomEngine(stage: HTMLElement, camera: HTMLElement, opti
   const booths = options.booths ?? camera, backdrop = options.backdrop, labels = options.labels, fit = options.fit, controls = options.controls;
   const previous = {
     cameraTransform: camera.style.transform, touch: stage.style.touchAction, tap: stage.style.getPropertyValue("-webkit-tap-highlight-color"), strokeScale: stage.style.getPropertyValue("--sw"),
+    markerScale: stage.style.getPropertyValue("--map-unit-per-pixel"),
     moving: stage.getAttribute("data-moving"), detail: booths.getAttribute("data-detail"), boothLevel: booths.getAttribute("data-label-level"), labelLevel: labels?.getAttribute("data-label-level") ?? null,
     stage: ["is-zooming", "is-panning", "is-interacting", "is-low-detail"].filter((name) => stage.classList.contains(name)),
     boothsLow: booths.classList.contains("is-low-detail"), labelsLow: labels?.classList.contains("is-low-detail") ?? false,
@@ -127,6 +128,7 @@ export function createD3ZoomEngine(stage: HTMLElement, camera: HTMLElement, opti
   let paintedDetail: string | null = null;
   let paintedInteraction: "zoom" | "pan" | null | undefined;
   let paintedStrokeScale: string | null = null;
+  let paintedMarkerScale: string | null = null;
   const viewBox = fittedViewBox(options.bounds);
   let frame = frameFor(viewBox, 0, 0);
   stage.style.touchAction = "none";
@@ -203,6 +205,13 @@ export function createD3ZoomEngine(stage: HTMLElement, camera: HTMLElement, opti
     const value = (1 / k).toFixed(4);
     if (value !== paintedStrokeScale) { stage.style.setProperty("--sw", value); paintedStrokeScale = value; }
   }
+  function paintMarkerScale(k: number) {
+    if (frame.pixelsPerUnit <= 0) return;
+    // Real circle radii/borders compensate for the displayed SVG scale, including
+    // viewport resizing. One inherited variable updates all markers in this RAF.
+    const value = (1 / (frame.pixelsPerUnit * k)).toFixed(8);
+    if (value !== paintedMarkerScale) { stage.style.setProperty("--map-unit-per-pixel", value); paintedMarkerScale = value; }
+  }
   function paintFit(k: number) {
     if (!fit || frame.pixelsPerUnit <= 0) return;
     // Identity size × k, with the letterbox offsets scaled the same way a CSS
@@ -221,6 +230,7 @@ export function createD3ZoomEngine(stage: HTMLElement, camera: HTMLElement, opti
     if (camera.style.transform !== transform) camera.style.transform = transform;
     paintFit(k);
     paintStrokeScale(k);
+    paintMarkerScale(k);
     const level = labelLevel(k);
     if (level !== paintedLabelLevel) {
       booths.setAttribute("data-label-level", String(level));
@@ -426,6 +436,7 @@ export function createD3ZoomEngine(stage: HTMLElement, camera: HTMLElement, opti
       camera.style.transform = previous.cameraTransform;
       stage.style.touchAction = previous.touch; stage.style.setProperty("-webkit-tap-highlight-color", previous.tap);
       if (previous.strokeScale) stage.style.setProperty("--sw", previous.strokeScale); else stage.style.removeProperty("--sw");
+      if (previous.markerScale) stage.style.setProperty("--map-unit-per-pixel", previous.markerScale); else stage.style.removeProperty("--map-unit-per-pixel");
       for (const name of ["is-zooming", "is-panning", "is-interacting", "is-low-detail"]) stage.classList.toggle(name, previous.stage.includes(name));
       booths.classList.toggle("is-low-detail", previous.boothsLow);
       if (labels) { restore(labels, "data-label-level", previous.labelLevel); labels.classList.toggle("is-low-detail", previous.labelsLow); }

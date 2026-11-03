@@ -166,14 +166,14 @@ function MapSurface({ data, selectedBoothId, onSelectBooth, onDeselectBooth, foc
             {labelShapes.map(({ booth, bounds, tier }) => <BoothLabel key={booth.id} booth={booth} bounds={bounds} tier={tier} company={booth.companyId ? companies.get(booth.companyId) : undefined} visited={Boolean(booth.companyId && visitedCompanyIds?.has(booth.companyId))} dimmed={Boolean(matchingBoothIds && !matchingBoothIds.has(booth.id))} />)}
           </svg>
           <svg id="booth-status" className={`${styles.layer} ${styles.labelViewport}`} viewBox={viewBoxAttr} preserveAspectRatio="none" aria-hidden="true">
-            {shapes.filter(({ booth }) => booth.companyId && view?.visibleIds.has(booth.id) && (savedCompanyIds?.has(booth.companyId) || visitedCompanyIds?.has(booth.companyId))).map(({ booth, bounds }) => <circle key={booth.id} data-company-marker={booth.companyId} className={`${visitedCompanyIds?.has(booth.companyId!) ? styles.visitedMarker : styles.savedMarker} ${matchingBoothIds && !matchingBoothIds.has(booth.id) ? styles.dimmed : ""}`} cx={bounds.x + bounds.width / 2} cy={bounds.y + bounds.height * .84} r=".01" strokeWidth="10" vectorEffect="non-scaling-stroke" />)}
+            {shapes.filter(({ booth }) => booth.companyId && (savedCompanyIds?.has(booth.companyId) || visitedCompanyIds?.has(booth.companyId))).map(({ booth, bounds }) => <circle key={booth.id} data-company-marker={booth.companyId} className={`${styles.mapMarker} ${visitedCompanyIds?.has(booth.companyId!) ? styles.visitedMarker : styles.savedMarker} ${matchingBoothIds && !matchingBoothIds.has(booth.id) ? styles.dimmed : ""}`} cx={bounds.x + bounds.width / 2} cy={bounds.y + bounds.height * .84} r="4" />)}
           </svg>
           <svg id="walking-route" className={`${styles.layer} ${styles.labelViewport}`} viewBox={viewBoxAttr} preserveAspectRatio="none" aria-hidden="true">
             {routePoints && routePoints.length > 0 && <>
               <polyline points={routePoints.map(p => p.join(",")).join(" ")} fill="none" stroke="white" strokeWidth="9" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
               <polyline points={routePoints.map(p => p.join(",")).join(" ")} fill="none" stroke="#165dcc" strokeWidth="5" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
-              <circle cx={routePoints[0][0]} cy={routePoints[0][1]} r=".01" stroke="#165dcc" strokeWidth="16" vectorEffect="non-scaling-stroke" />
-              <circle cx={routePoints.at(-1)![0]} cy={routePoints.at(-1)![1]} r=".01" stroke="#bd321e" strokeWidth="16" vectorEffect="non-scaling-stroke" />
+              <circle data-route-marker="start" className={`${styles.mapMarker} ${styles.routeMarker} ${styles.routeStart}`} cx={routePoints[0][0]} cy={routePoints[0][1]} r="7" />
+              <circle data-route-marker="end" className={`${styles.mapMarker} ${styles.routeMarker} ${styles.routeEnd}`} cx={routePoints.at(-1)![0]} cy={routePoints.at(-1)![1]} r="7" />
             </>}
             {mapOverlay}
           </svg>

@@ -374,6 +374,38 @@ test('drag bursts transform only the HTML camera once per frame without repeated
   } finally { f.close(); }
 });
 
+test('marker radius compensation follows displayed zoom and resize, with stable size during pan', () => {
+  const f=setup(stage=>{stage.style.setProperty('--map-unit-per-pixel','2');return {};});
+  const frames=new Map();let id=0,time=0;
+  f.win.requestAnimationFrame=callback=>{frames.set(++id,callback);return id;};
+  f.win.cancelAnimationFrame=key=>frames.delete(key);
+  const flush=()=>{const batch=[...frames.values()];frames.clear();time+=16;batch.forEach(callback=>callback(time));};
+  const check=()=>{
+    const unit=Number(f.stage.style.getPropertyValue('--map-unit-per-pixel'));
+    const displayedScale=parseFloat(f.fit.style.width)/fittedViewBox(f.options.bounds).width;
+    assert.ok(unit>0&&Number.isFinite(unit));
+    assert.ok(Math.abs(4*unit*displayedScale-4)<1e-6,'saved/visited radius stays at 4 screen pixels');
+    assert.ok(Math.abs(7*unit*displayedScale-7)<1e-6,'route endpoint radius stays at 7 screen pixels');
+    assert.ok(Math.abs(2*unit*displayedScale-2)<1e-6,'circle outlines stay at 2 screen pixels');
+  };
+  try{
+    check();
+    f.stage.dispatchEvent(new f.win.WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY:-500,clientX:500,clientY:300}));
+    flush();check();
+    const targetUnit=1/(f.engine.getFrame().pixelsPerUnit*f.engine.getZoom());
+    assert.ok(Math.abs(Number(f.stage.style.getPropertyValue('--map-unit-per-pixel'))-targetUnit)>.001,'uses the displayed camera, not the target');
+    for(let step=0;step<80;step++){flush();check();}
+    f.stage.getBoundingClientRect=()=>({x:0,y:0,left:0,top:0,right:390,bottom:800,width:390,height:800});
+    f.win.dispatchEvent(new f.win.Event('resize'));flush();check();
+    const before=f.stage.style.getPropertyValue('--map-unit-per-pixel');
+    f.stage.dispatchEvent(new f.win.KeyboardEvent('keydown',{bubbles:true,key:'ArrowLeft'}));flush();check();
+    assert.equal(f.stage.style.getPropertyValue('--map-unit-per-pixel'),before,'pan leaves marker sizes unchanged');
+    f.engine.zoomOut({animate:false});flush();check();
+    f.engine.resetView({animate:false});flush();check();
+    f.engine.destroy();assert.equal(f.stage.style.getPropertyValue('--map-unit-per-pixel'),'2','cleanup restores the original inherited variable');
+  }finally{f.close();}
+});
+
 test('stroke scale and fit size track the displayed zoom every frame so borders stay sharp', () => {
   const f = setup(), frames = new Map(); let id = 0;
   f.win.requestAnimationFrame = (callback) => { frames.set(++id, callback); return id; };

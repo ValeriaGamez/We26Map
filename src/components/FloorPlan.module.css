@@ -46,8 +46,11 @@
 .booth:focus-visible.boundary { stroke: var(--accent); stroke-width: 2px; }
 .selected.boundary { fill: #c9b6df; stroke: var(--accent); stroke-width: 2px; }
 .visitedLabel { fill: #57565f; }
-.savedMarker { fill: var(--saved-gold); stroke: var(--saved-gold); }
-.visitedMarker { fill: var(--visited-gray); stroke: var(--visited-gray); }
+.mapMarker { r: calc(4px * var(--map-unit-per-pixel, 0)); stroke: #fff; stroke-width: calc(2px * var(--map-unit-per-pixel, 0)); }
+.routeMarker { r: calc(7px * var(--map-unit-per-pixel, 0)); }
+.savedMarker { fill: var(--saved-gold); }
+.visitedMarker { fill: var(--visited-gray); }
+.routeStart { fill: #165dcc; }.routeEnd { fill: #bd321e; }
 .dimmed { opacity: .3; }.dimmed:focus-visible { opacity: 1; }
 .warning { position: absolute; bottom: 64px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 32px); border-radius: 12px; background: #fff7e7; padding: 12px 16px; font-size: 13px; }
 .message { height: 100%; min-height: 16rem; display: grid; align-content: center; justify-items: center; gap: 16px; padding: 24px; font-size: 14px; color: #53535b; }
