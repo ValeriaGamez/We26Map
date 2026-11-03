@@ -50,10 +50,10 @@ export default function FloorMap({ area = "main" }: { area?: FloorplanArea }) {
   }, [query, data, booths]);
   const remaining = route.filter(item => !visitedIds.has(item.id)).length;
 
-  function locate(id: string) {
+  function locate(id: string, startDirections = false) {
     if (!selected) previousScroll.current = scroll.current?.scrollTop ?? 0;
     setSelectedId(id);
-    if (directions.active) directions.begin(id);
+    if (directions.active || (startDirections && directions.supported(id))) directions.begin(id);
     setFocusRequest(previous => ({ boothId: id, revision: (previous?.revision ?? 0) + 1 }));
     if (phone) { search.current?.blur(); setSheetExpanded(false); }
   }
@@ -69,7 +69,7 @@ export default function FloorMap({ area = "main" }: { area?: FloorplanArea }) {
 
   return <main className={styles.app} data-sheet-expanded={sheetExpanded}>
     <section className={styles.mapSection} inert={phone && sheetExpanded} aria-label={area === "interview" ? "WE26 interview booth map" : "WE26 main booth map"}>
-      <FloorPlan key={area} area={area} onDataLoad={setData} selectedBoothId={selectedId} focusRequest={focusRequest} onSelectBooth={locate} onDeselectBooth={deselect} matchingBoothIds={matchingBooths} savedCompanyIds={savedIds} visitedCompanyIds={visitedIds} pointSelection={directions.placing} onMapPoint={directions.place} onCancelPlacement={directions.cancelPlacement} routePoints={directions.route?.points} routeFitRevision={directions.fitRevision} />
+      <FloorPlan key={area} area={area} onDataLoad={setData} selectedBoothId={selectedId} focusRequest={focusRequest} onSelectBooth={locate} onDirectionsBooth={id => locate(id, true)} onDeselectBooth={deselect} matchingBoothIds={matchingBooths} savedCompanyIds={savedIds} visitedCompanyIds={visitedIds} pointSelection={directions.placing} onMapPoint={directions.place} onCancelPlacement={directions.cancelPlacement} onClearRoute={!selectedId && directions.route && !directions.placing ? directions.clear : undefined} routePoints={directions.route?.points} routeFitRevision={directions.fitRevision} />
       {directions.active && <div className={styles.directionsPanel} aria-label="Walking directions">
         <p role="status" aria-live="polite">{directions.message}</p>
         <div>

@@ -15,7 +15,7 @@ test('map surface supports keyboard pin placement and an independent noninteract
   for(const[key,value]of Object.entries({window:dom.window,document:dom.window.document,navigator:dom.window.navigator,IS_REACT_ACT_ENVIRONMENT:true,fetch:async()=>({ok:true,json:async()=>source})})){
     previous.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{configurable:true,writable:true,value});
   }
-  const clicks=[],modes=[];let cancelled=0,onViewSettle;
+  const clicks=[],modes=[];let cancelled=0,onViewSettle,engineOptions;
   const fakeEngine={setPointSelection:value=>modes.push(value),screenToMap:(x,y)=>[x/2,y/2],getDisplayedPixelsPerUnit:()=>2,fitBounds(){},destroy(){}};
   const cache=new Map();
   function load(filename){
@@ -23,7 +23,7 @@ test('map surface supports keyboard pin placement and an independent noninteract
     const compiledModule={exports:{}};cache.set(filename,compiledModule);
     const code=ts.transpileModule(readFileSync(filename,'utf8'),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.CommonJS,esModuleInterop:true}}).outputText;
     const localRequire=name=>{
-      if(name==='@/utils/d3ZoomEngine')return{createD3ZoomEngine:(_stage,_camera,options)=>{onViewSettle=options.onViewSettle;return fakeEngine;},fittedViewBox:bounds=>bounds};
+      if(name==='@/utils/d3ZoomEngine')return{createD3ZoomEngine:(_stage,_camera,options)=>{engineOptions=options;onViewSettle=options.onViewSettle;return fakeEngine;},fittedViewBox:bounds=>bounds};
       if(name.endsWith('.css'))return{__esModule:true,default:new Proxy({},{get:(_,key)=>String(key)})};
       if(name.startsWith('.')||name.startsWith('@/')){
         const base=name.startsWith('@/')?path.join(rootPath,name.slice(2)):path.resolve(path.dirname(filename),name);
@@ -67,5 +67,14 @@ test('map surface supports keyboard pin placement and an independent noninteract
     assert.equal(modes.at(-1),false);assert.equal(document.querySelector('.placementCrosshair'),null);
     assert.equal(document.querySelector('[data-company-marker]'),savedMarker,'visiting updates the existing marker');
     assert.equal(savedMarker.classList.contains('visitedMarker'),true);
+    let cleared=0;
+    await act(async()=>root.render(React.createElement(Component,{...props,pointSelection:false,onClearRoute:()=>cleared++})));
+    assert.equal(engineOptions.canClearRoute([20,30],2),false,'line is protected');
+    assert.equal(engineOptions.canClearRoute([10,15],2),false,'pin has a screen-space hit area');
+    assert.equal(engineOptions.canClearRoute([20,15],2),true,'empty space clears');
+    assert.equal(engineOptions.canClearRoute([20,15],0.5),false,'hit tolerance follows displayed zoom');
+    engineOptions.onClearRoute();assert.equal(cleared,1);
+    await act(async()=>root.render(React.createElement(Component,{...props,pointSelection:false})));
+    assert.equal(engineOptions.canClearRoute([100,100],2),false,'updated state is read without recreating the engine');
   }finally{await act(async()=>root.unmount());dom.window.close();for(const[key,descriptor]of previous){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else delete globalThis[key];}}
 });

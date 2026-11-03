@@ -273,6 +273,25 @@ test('wheel bursts queue one frame and never write a transform in the input hand
     assert.equal(frames.size, 0);
   } finally { f.close(); }
 });
+test('background double-click clears eligible routes without zooming and captures first-click eligibility', () => {
+  let eligible = true, cleared = 0;
+  const f = setup(() => ({ canClearRoute: () => eligible, onClearRoute: () => cleared++ }));
+  const click = (type, detail, x = 500) => f.stage.dispatchEvent(new f.win.MouseEvent(type, { bubbles: true, cancelable: true, view: f.win, detail, clientX: x, clientY: 300 }));
+  try {
+    const before = f.engine.getTransform();
+    click('click', 1); click('click', 2); click('dblclick', 2);
+    assert.equal(cleared, 1); assert.deepEqual(f.engine.getTransform(), before);
+    eligible = false; click('click', 1);
+    eligible = true; click('click', 2); click('dblclick', 2);
+    assert.equal(cleared, 1, 'deselecting on the first click does not make that gesture eligible');
+    eligible = false; click('click', 1); click('dblclick', 2);
+    assert.equal(cleared, 1, 'an ineligible point preserves the route');
+    f.engine.setPointSelection(true); eligible = true;
+    click('click', 1); click('dblclick', 2);
+    assert.equal(cleared, 1, 'placement never clears a route');
+  } finally { f.close(); }
+});
+
 test('double-click zoom remains available through the D3 behavior', async () => {
   const f = setup();
   try {
@@ -280,6 +299,34 @@ test('double-click zoom remains available through the D3 behavior', async () => 
     await new Promise((resolve) => setTimeout(resolve, 380));
     near(f.engine.getZoom(), 2);
   } finally { f.close(); }
+});
+
+test('booth double-click requests directions once without zoom; single click still selects', () => {
+  const requested=[];
+  const f=setup(()=>({onDirectionsBooth:id=>requested.push(id)}));
+  const event=(type,detail)=>new f.win.MouseEvent(type,{bubbles:true,cancelable:true,view:f.win,detail,clientX:10,clientY:10});
+  try{
+    const booth=f.booths.querySelector('rect'),before=f.engine.getTransform();
+    booth.dispatchEvent(event('click',1));booth.dispatchEvent(event('click',2));booth.dispatchEvent(event('dblclick',2));
+    assert.deepEqual(f.selected,['a']);assert.deepEqual(requested,['a']);assert.equal(f.engine.getTransform(),before);
+    // A focusing animation can move the booth before the second click lands.
+    booth.dispatchEvent(event('click',1));f.stage.dispatchEvent(event('click',2));f.stage.dispatchEvent(event('dblclick',2));
+    assert.deepEqual(requested,['a','a']);
+    f.stage.dispatchEvent(event('click',1));
+    assert.equal(f.deselected.length,1,'normal background clicks remain available');
+  }finally{f.close();}
+});
+
+test('a double-click used for pin placement does not activate directions after placement exits', () => {
+  const requested=[];let f;
+  f=setup(()=>({onDirectionsBooth:id=>requested.push(id),onMapPoint:()=>f.engine.setPointSelection(false)}));
+  try{
+    const booth=f.booths.querySelector('rect'),before=f.engine.getTransform();
+    const event=(type,detail)=>new f.win.MouseEvent(type,{bubbles:true,cancelable:true,view:f.win,detail});
+    f.engine.setPointSelection(true);
+    booth.dispatchEvent(event('click',1));booth.dispatchEvent(event('click',2));booth.dispatchEvent(event('dblclick',2));
+    assert.deepEqual(requested,[]);assert.deepEqual(f.selected,[]);assert.equal(f.engine.getTransform(),before);
+  }finally{f.close();}
 });
 test('D3 mouse drag pans and suppresses the resulting booth click', () => {
   const f = setup();

@@ -54,6 +54,7 @@ async function setup({graph=network(),fetchError=false,area='main'}={}){
     button:label=>[...document.querySelectorAll('button')].find(b=>b.textContent.includes(label)),
     async click(button){assert.ok(button);await act(async()=>button.click());},
     async select(id){await act(async()=>mapProps.onSelectBooth(id));},
+    async directions(id){await act(async()=>mapProps.onDirectionsBooth(id));},
     async place(point,scale){await act(async()=>mapProps.onMapPoint(point,scale));},
     async close(){await act(async()=>root.unmount());dom.window.close();for(const[key,descriptor]of previous){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else delete globalThis[key];}}
   };
@@ -76,8 +77,37 @@ test('directions target the exact booth, snap the start, recalculate, move, fit,
     assert.equal(window.localStorage.getItem('we26.company-preferences.v1'),saved);assert.equal(f.requests,1);
   }finally{await f.close();}
 });
+test('background route clearing is enabled only with an active route and no selected booth or placement',async()=>{
+  const f=await setup();try{
+    assert.equal(f.props.onClearRoute,undefined);
+    await f.directions('a');await f.place([10,20],2);
+    assert.equal(f.props.onClearRoute,undefined,'selected booth protects the route');
+    await act(async()=>f.props.onDeselectBooth());
+    assert.equal(typeof f.props.onClearRoute,'function');
+    await f.click(f.button('Move start'));assert.equal(f.props.onClearRoute,undefined);
+    await act(async()=>f.props.onCancelPlacement());
+    await act(async()=>f.props.onClearRoute());
+    assert.equal(f.props.routePoints,undefined);assert.equal(f.button('Clear route'),undefined);
+  }finally{await f.close();}
+});
+
 test('cancelling the first placement leaves no active route',async()=>{
   const f=await setup();try{await f.select('a');await f.click(f.button('Directions here'));await act(async()=>f.props.onCancelPlacement());assert.equal(f.props.pointSelection,false);assert.equal(f.button('Clear route'),undefined);}finally{await f.close();}
+});
+
+test('double-click directions select the exact destination and reuse an existing start',async()=>{
+  const f=await setup();try{
+    await f.directions('b');assert.equal(f.props.selectedBoothId,'b');assert.equal(f.props.pointSelection,true);
+    await f.place([10,20],2);assert.deepEqual(f.props.routePoints.at(-1),[85,10]);
+    await f.directions('a');assert.equal(f.props.selectedBoothId,'a');assert.equal(f.props.pointSelection,false);
+    assert.deepEqual(f.props.routePoints.at(-1),[45,10]);
+  }finally{await f.close();}
+});
+
+test('double-click on an unsupported map selects the booth without starting unavailable directions',async()=>{
+  const f=await setup({area:'interview'});try{
+    await f.directions('a');assert.equal(f.props.selectedBoothId,'a');assert.equal(f.props.pointSelection,false);assert.equal(f.button('Clear route'),undefined);
+  }finally{await f.close();}
 });
 
 test('users can pin inside a booth, retain that start across destinations, and move back onto an aisle',async()=>{

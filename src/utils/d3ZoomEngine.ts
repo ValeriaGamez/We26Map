@@ -61,6 +61,9 @@ export type D3ZoomOptions = {
   backdrop?: Element;
   labels?: Element;
   onSelectBooth?: (id: string) => void;
+  onDirectionsBooth?: (id: string) => void;
+  canClearRoute?: (point: [number, number], pixelsPerUnit: number) => boolean;
+  onClearRoute?: () => void;
   onDeselectBooth?: () => void;
   onViewSettle?: (view: SettledView) => void;
   onMapPoint?: (point: [number, number], pixelsPerUnit: number) => void;
@@ -107,6 +110,10 @@ export function createD3ZoomEngine(stage: HTMLElement, camera: HTMLElement, opti
   let renderTarget: ZoomTransform | null = null, rendering = false;
   let targetLowDetail = threshold > 0 && 1 < threshold;
   let interaction: "zoom" | "pan" | null = null;
+  let pointSelection = false;
+  let placementClick = false;
+  let lastClickBooth: string | null = null;
+  let clearRouteClick = false;
   const preference = win.matchMedia("(prefers-reduced-motion: reduce)");
   const selection = select<HTMLElement, unknown>(stage);
   // Cache geometry once. No per-frame getBBox/getBoundingClientRect calls.
@@ -169,6 +176,8 @@ export function createD3ZoomEngine(stage: HTMLElement, camera: HTMLElement, opti
     // D3 interprets wheelDelta in log2 units; high-resolution deltas stay continuous.
     .wheelDelta(wheelDelta)
     .filter((event: MouseEvent) => {
+      const hit = (event.target as Element | null)?.closest?.("[data-booth-id]");
+      if (event.type === "dblclick" && (pointSelection || placementClick || shouldClearRoute(event) || (options.onDirectionsBooth && (lastClickBooth || (hit && stage.contains(hit)))))) return false;
       if (event.type !== "wheel") clearWheel();
       return (!event.ctrlKey || event.type === "wheel") && !event.button;
     })
@@ -368,22 +377,52 @@ export function createD3ZoomEngine(stage: HTMLElement, camera: HTMLElement, opti
     const box = { x: projectX(minX), y: projectY(minY), width: (maxX - minX) * frame.pixelsPerUnit, height: (maxY - minY) * frame.pixelsPerUnit };
     transformTo(focusTransform({ x: 0, y: 0, width: frame.width, height: frame.height }, box, min, max), 300, motion);
   }
-  let pointSelection = false;
   function screenToMap(x: number, y: number): [number, number] {
     const world = currentView.invert([x, y]);
     return [viewBox.x + (world[0] - frame.offsetX) / frame.pixelsPerUnit, viewBox.y + (world[1] - frame.offsetY) / frame.pixelsPerUnit];
   }
+  function canClearRouteAt(event: MouseEvent) {
+    const [x, y] = pointer(event, stage);
+    return Boolean(options.onClearRoute && options.canClearRoute?.(screenToMap(x, y), frame.pixelsPerUnit * currentView.k));
+  }
+  function shouldClearRoute(event: MouseEvent) {
+    const hit = (event.target as Element | null)?.closest?.("[data-booth-id]");
+    return clearRouteClick && !lastClickBooth && !(hit && stage.contains(hit)) && canClearRouteAt(event);
+  }
   selection.on("click.floorplan", (event: MouseEvent) => {
-    if (destroyed || event.detail === 0 || event.defaultPrevented) return;
+    if (destroyed || event.detail !== 1 || event.defaultPrevented) return;
     if (pointSelection) {
+      placementClick = true;
       const [x, y] = pointer(event, stage);
       options.onMapPoint?.(screenToMap(x, y), frame.pixelsPerUnit * currentView.k);
       return;
     }
+    placementClick = false;
     const target = event.target as Element | null;
     const hit = target?.closest?.("[data-booth-id]");
+    lastClickBooth = hit && stage.contains(hit) ? hit.getAttribute("data-booth-id") : null;
+    // Capture eligibility before the first background click deselects a booth.
+    clearRouteClick = !lastClickBooth && canClearRouteAt(event);
     if (hit && stage.contains(hit)) options.onSelectBooth?.(hit.getAttribute("data-booth-id")!);
     else options.onDeselectBooth?.();
+  });
+  selection.on("dblclick.floorplan", (event: MouseEvent) => {
+    if (destroyed || event.defaultPrevented) return;
+    // The first click may already have placed a pin and exited placement mode.
+    if (pointSelection || placementClick) { placementClick = false; event.preventDefault(); return; }
+    if (shouldClearRoute(event)) {
+      clearRouteClick = false;
+      event.preventDefault();
+      options.onClearRoute?.();
+      return;
+    }
+    if (!options.onDirectionsBooth) return;
+    const hit = (event.target as Element | null)?.closest?.("[data-booth-id]");
+    // Keep the first click's booth if automatic focusing moved it under the cursor.
+    const id = lastClickBooth ?? (hit && stage.contains(hit) ? hit.getAttribute("data-booth-id") : null);
+    if (!id) return;
+    event.preventDefault();
+    options.onDirectionsBooth(id);
   });
   selection.on("keydown.floorplan", (event: KeyboardEvent) => {
     if (event.key === "+" || event.key === "=") { event.preventDefault(); scaleBy(1.25, { animate: false }); }

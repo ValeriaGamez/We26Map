@@ -7,6 +7,7 @@ import { createD3ZoomEngine, fittedViewBox } from "@/utils/d3ZoomEngine";
 import type { D3ZoomEngine, SettledView } from "@/utils/d3ZoomEngine";
 import { selectFloorplanArea } from "@/lib/floorplan-area";
 import { boothLabelTier } from "@/lib/booth-label-lod";
+import { projectToSegment } from "@/lib/routing";
 import type { FloorplanArea } from "@/lib/floorplan-area";
 import styles from "./FloorPlan.module.css";
 
@@ -24,12 +25,14 @@ export type FloorPlanProps = {
   maxZoom?: number;
   detailThreshold?: number;
   onSelectBooth?: (boothId: string) => void;
+  onDirectionsBooth?: (boothId: string) => void;
   onDeselectBooth?: () => void;
   onDataLoad?: (data: FloorplanData) => void;
   onEngineReady?: (engine: D3ZoomEngine | null) => void;
   pointSelection?: boolean;
   onMapPoint?: (point: Point, pixelsPerUnit: number) => void;
   onCancelPlacement?: () => void;
+  onClearRoute?: () => void;
   routePoints?: Point[];
   routeFitRevision?: number;
   mapOverlay?: React.ReactNode;
@@ -56,7 +59,7 @@ export default function FloorPlan({ dataUrl = "/data/booths.json", area = "main"
   return <MapSurface key={`${dataUrl}-${area}`} data={data} {...props} />;
 }
 
-function MapSurface({ data, selectedBoothId, onSelectBooth, onDeselectBooth, focusRequest, matchingBoothIds, savedCompanyIds, visitedCompanyIds, minZoom = 1.0, maxZoom = 8, detailThreshold = 1.8, onEngineReady, pointSelection = false, onMapPoint, onCancelPlacement, routePoints, routeFitRevision = 0, mapOverlay }: Omit<FloorPlanProps, "dataUrl" | "onDataLoad"> & { data: FloorplanData }) {
+function MapSurface({ data, selectedBoothId, onSelectBooth, onDirectionsBooth, onDeselectBooth, focusRequest, matchingBoothIds, savedCompanyIds, visitedCompanyIds, minZoom = 1.0, maxZoom = 8, detailThreshold = 1.8, onEngineReady, pointSelection = false, onMapPoint, onCancelPlacement, onClearRoute, routePoints, routeFitRevision = 0, mapOverlay }: Omit<FloorPlanProps, "dataUrl" | "onDataLoad"> & { data: FloorplanData }) {
   const stage = useRef<HTMLDivElement>(null);
   const camera = useRef<HTMLDivElement>(null);
   const fit = useRef<HTMLDivElement>(null);
@@ -66,8 +69,11 @@ function MapSurface({ data, selectedBoothId, onSelectBooth, onDeselectBooth, foc
   const zoomInButton = useRef<HTMLButtonElement>(null);
   const zoomOutButton = useRef<HTMLButtonElement>(null);
   const engine = useRef<D3ZoomEngine | null>(null);
-  const callbacks = useRef({ onSelectBooth, onDeselectBooth, onEngineReady, onMapPoint });
-  useEffect(() => { callbacks.current = { onSelectBooth, onDeselectBooth, onEngineReady, onMapPoint }; }, [onSelectBooth, onDeselectBooth, onEngineReady, onMapPoint]);
+  const callbacks = useRef({ onSelectBooth, onDirectionsBooth, onDeselectBooth, onEngineReady, onMapPoint });
+  useEffect(() => { callbacks.current = { onSelectBooth, onDirectionsBooth, onDeselectBooth, onEngineReady, onMapPoint }; }, [onSelectBooth, onDirectionsBooth, onDeselectBooth, onEngineReady, onMapPoint]);
+  const canRequestDirections = Boolean(onDirectionsBooth);
+  const routeInteraction = useRef({ onClearRoute, routePoints });
+  useEffect(() => { routeInteraction.current = { onClearRoute, routePoints }; }, [onClearRoute, routePoints]);
   const [crosshair, setCrosshair] = useState({ x: 0.5, y: 0.5 });
   const [internalSelection, setInternalSelection] = useState<string | null>(null);
   const showLabels = true;
@@ -97,18 +103,27 @@ function MapSurface({ data, selectedBoothId, onSelectBooth, onDeselectBooth, foc
     if (!stage.current || !camera.current || !fit.current || !boothLayer.current || !backdropLayer.current || !labelLayer.current || !zoomInButton.current || !zoomOutButton.current) return;
     const controller = createD3ZoomEngine(stage.current, camera.current, {
       bounds: sceneBounds, minZoom, maxZoom, detailThreshold, onSelectBooth: select, onDeselectBooth: deselect, onViewSettle: settle,
+      onDirectionsBooth: canRequestDirections ? id => callbacks.current.onDirectionsBooth?.(id) : undefined,
       onMapPoint: (point, scale) => callbacks.current.onMapPoint?.(point, scale),
+      canClearRoute: (point, scale) => {
+        const { onClearRoute, routePoints: points } = routeInteraction.current;
+        if (!onClearRoute || !points?.length || scale <= 0) return false;
+        // A screen-space tolerance includes both the visible stroke and endpoint pins.
+        if (points.some(p => Math.hypot(p[0] - point[0], p[1] - point[1]) * scale <= 12)) return false;
+        return !points.some((p, i) => i > 0 && projectToSegment(point, points[i - 1], p).distance * scale <= 12);
+      },
+      onClearRoute: () => routeInteraction.current.onClearRoute?.(),
       fit: fit.current, booths: boothLayer.current, backdrop: backdropLayer.current, labels: labelLayer.current,
       controls: { zoomIn: zoomInButton.current, zoomOut: zoomOutButton.current },
     });
     engine.current = controller;
     callbacks.current.onEngineReady?.(controller);
     return () => { controller.destroy(); engine.current = null; callbacks.current.onEngineReady?.(null); };
-  }, [sceneBounds, minZoom, maxZoom, detailThreshold, select, deselect, settle]);
+  }, [sceneBounds, minZoom, maxZoom, detailThreshold, select, deselect, settle, canRequestDirections]);
   useEffect(() => {
     engine.current?.setPointSelection(pointSelection);
     if (pointSelection) stage.current?.focus({ preventScroll: true });
-  }, [pointSelection, sceneBounds, minZoom, maxZoom, detailThreshold]);
+  }, [pointSelection, sceneBounds, minZoom, maxZoom, detailThreshold, canRequestDirections]);
   useEffect(() => {
     if (!focusRequest) return;
     const shape = shapes.find(({ booth }) => booth.id === focusRequest.boothId);
