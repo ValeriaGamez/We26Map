@@ -1,45 +1,105 @@
-﻿"use client";
+"use client";
 
-import { useMemo, useRef, useState } from "react";
-import FloorPlan from "./FloorPlan";
-import type { FloorplanData } from "@/lib/floorplan-types";
-import styles from "./floor-map.module.css";
+import { useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
+import FloorPlan from "./FloorPlan";
+import ExplorerSheet, { usePhoneLayout } from "./explorer-sheet";
+import Icon from "./explorer-icons";
+import { EMPTY_COMPANY, preferenceSnapshot, serverPreferenceSnapshot, subscribePreferences, updateCompanyPreference } from "@/lib/company-preferences";
+import { walkingOrder } from "@/lib/walking-order";
+import type { FloorplanData } from "@/lib/floorplan-types";
 import type { FloorplanArea } from "@/lib/floorplan-area";
+import styles from "./floor-map.module.css";
+
+type Tab = "all" | "saved" | "route";
 
 export default function FloorMap({ area = "main" }: { area?: FloorplanArea }) {
   const [data, setData] = useState<FloorplanData | null>(null);
-  const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
+  const [tab, setTab] = useState<Tab>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [focusRequest, setFocusRequest] = useState<{ boothId: string; revision: number } | null>(null);
-  const searchInput = useRef<HTMLInputElement>(null);
-  const booths = useMemo(() => new Map(data?.booths.map((booth) => [booth.id, booth]) ?? []), [data]);
+  const [sheetExpanded, setSheetExpanded] = useState(false);
+  const phone = usePhoneLayout();
+  const preferences = useSyncExternalStore(subscribePreferences, preferenceSnapshot, serverPreferenceSnapshot);
+  const search = useRef<HTMLInputElement>(null);
+  const back = useRef<HTMLButtonElement>(null);
+  const scroll = useRef<HTMLDivElement>(null);
+  const previousScroll = useRef(0);
+  const returnFocus = useRef(false);
+  const activeTab = useRef<HTMLButtonElement>(null);
+  const booths = useMemo(() => new Map(data?.booths.map(booth => [booth.id, booth]) ?? []), [data]);
   const selected = selectedId ? booths.get(selectedId) : undefined;
-  const company = data?.companies.find((item) => item.id === selected?.companyId);
-  const query = search.trim().toLocaleLowerCase();
-  const results = useMemo(() => data?.companies.filter((item) => !query || [item.name, ...item.aliases].some((name) => name.toLocaleLowerCase().includes(query)) || item.boothIds.some((id) => booths.get(id)?.number.includes(query))) ?? [], [data, query, booths]);
-  const matchingBooths = useMemo(() => query ? new Set(results.flatMap((item) => item.boothIds)) : undefined, [query, results]);
-  function locate(boothId: string) {
-    setSelectedId(boothId);
-    setFocusRequest((previous) => ({ boothId, revision: (previous?.revision ?? 0) + 1 }));
+  const company = data?.companies.find(item => item.id === selected?.companyId);
+  const companyState = company && Object.hasOwn(preferences.companies, company.id) ? preferences.companies[company.id] : EMPTY_COMPANY;
+  const savedIds = useMemo(() => new Set(Object.entries(preferences.companies).filter(([, item]) => item.saved).map(([id]) => id)), [preferences.companies]);
+  const visitedIds = useMemo(() => new Set(Object.entries(preferences.companies).filter(([, item]) => item.visited).map(([id]) => id)), [preferences.companies]);
+  const saved = useMemo(() => data?.companies.filter(item => savedIds.has(item.id)) ?? [], [data, savedIds]);
+  const route = useMemo(() => walkingOrder(saved, data?.booths ?? []), [saved, data]);
+  const normalized = query.trim().toLocaleLowerCase();
+  const matches = (item: NonNullable<FloorplanData["companies"]>[number]) => !normalized || [item.name, ...item.aliases].some(name => name.toLocaleLowerCase().includes(normalized)) || item.boothIds.some(id => booths.get(id)?.number.includes(normalized));
+  const results = (tab === "all" ? data?.companies ?? [] : tab === "saved" ? saved : route).filter(matches);
+  const matchingBooths = useMemo(() => {
+    const text = query.trim().toLocaleLowerCase();
+    if (!text || !data) return undefined;
+    return new Set(data.companies.filter(item => [item.name, ...item.aliases].some(name => name.toLocaleLowerCase().includes(text)) || item.boothIds.some(id => booths.get(id)?.number.includes(text))).flatMap(item => item.boothIds));
+  }, [query, data, booths]);
+  const remaining = route.filter(item => !visitedIds.has(item.id)).length;
+
+  function locate(id: string) {
+    if (!selected) previousScroll.current = scroll.current?.scrollTop ?? 0;
+    setSelectedId(id);
+    setFocusRequest(previous => ({ boothId: id, revision: (previous?.revision ?? 0) + 1 }));
+    if (phone) { search.current?.blur(); setSheetExpanded(false); }
   }
-  function closeDetails() {
-    setSelectedId(null);
-    searchInput.current?.focus({ preventScroll: true });
-  }
-  return <main className={styles.app}>
-    <header className={styles.header}><div><span className={styles.brandIcon} aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3V6ZM9 3v15m6-12v15" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /></svg></span><strong>WE26 <span>Boston</span></strong><span className={styles.brandSub}>Floor explorer</span></div><nav className={styles.mapTabs} aria-label="Floor map views"><Link href="/" aria-current={area === "main" ? "page" : undefined}>Main Booths</Link><Link href="/interview-booths" aria-current={area === "interview" ? "page" : undefined}>Interview Booths</Link></nav></header>
-    <div className={styles.workspace}>
-      <aside className={styles.sidebar} aria-label="Company search and booth details">
-        <div className={styles.intro}><p className={styles.eyebrow}>{area === "interview" ? "WE26 INTERVIEW BOOTHS" : "WE26 CAREER FAIR"}</p><h1>{area === "interview" ? <>Find your<br />interview booth.</> : <>Your next<br />connection.</>}</h1><p>{area === "interview" ? "Explore company interview locations." : "Find the companies you want to meet."}</p></div>
-        <label className={styles.searchLabel} htmlFor="company-search">Company or booth number</label>
-        <div className={styles.searchField}><svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" strokeWidth="1.8" /><path d="m16 16 4.5 4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg><input ref={searchInput} id="company-search" className={styles.search} type="search" placeholder="Search companies or booths" value={search} onChange={(event) => setSearch(event.target.value)} /></div>
-        <p className={styles.resultCount} role="status">{data ? `${results.length} companies${results.length > 60 ? " · Search to see more" : ""}` : "Loading companies…"}</p>
-        <div className={styles.results}>{results.slice(0, 60).map((item) => <button aria-pressed={company?.id === item.id} className={company?.id === item.id ? styles.activeResult : styles.result} key={item.id} onClick={() => locate(item.boothIds.find((id) => booths.get(id)?.number.includes(query)) ?? item.boothIds[0])}><strong>{item.name}</strong><span>Booth {item.boothIds.map((id) => booths.get(id)?.number).join(" · ")}</span></button>)}{data && !results.length && <div className={styles.empty}><strong>No companies found</strong><p>Try a different name or booth number.</p></div>}</div>
-        {selected && <section className={styles.details} aria-label="Selected booth details" aria-live="polite" onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); closeDetails(); } }}><button className={styles.close} aria-label="Close booth details" onClick={closeDetails}>&times;</button><p className={styles.eyebrow}>BOOTH {selected.number}</p><h2>{company?.name ?? "Unassigned space"}</h2><p className={styles.status}>{selected.spaceType === "queue" ? "Queue space" : selected.status === "available" ? "Available space" : selected.status === "held" ? "On hold" : "Exhibitor space"}</p>{selected.spaceLabel && <p>{selected.spaceLabel}</p>}{company && <><p className={styles.otherLabel}>{company.boothIds.length > 1 ? `All ${company.boothIds.length} spaces for this company` : "Company booth"}</p><div className={styles.boothLinks}>{company.boothIds.map((id) => <button key={id} aria-pressed={id === selectedId} onClick={() => locate(id)}>{booths.get(id)?.number}</button>)}</div></>}</section>}
-        {data && <p className={styles.sourceNote}><a href="https://swe.expocad.com/Events/we26/index.html" target="_blank" rel="noreferrer">Official EXPOCAD map ↗</a><span>Updated {data.source.lastSaved}</span><span>{data.booths.length} {area === "interview" ? "interview" : "main"} spaces</span></p>}
-      </aside>
-      <section className={styles.mapSection} aria-label={area === "interview" ? "WE26 interview booth map" : "WE26 main booth map"}><FloorPlan key={area} area={area} onDataLoad={setData} onSelectBooth={setSelectedId} selectedBoothId={selectedId} focusRequest={focusRequest} matchingBoothIds={matchingBooths} /></section>
-    </div>
+  function deselect() { setSelectedId(null); setFocusRequest(null); }
+  function returnToBrowse() { returnFocus.current = true; deselect(); }
+  useLayoutEffect(() => {
+    if (selected) { scroll.current?.scrollTo?.({ top: 0 }); back.current?.focus({ preventScroll: true }); }
+    else {
+      if (scroll.current) scroll.current.scrollTop = previousScroll.current;
+      if (returnFocus.current) { activeTab.current?.focus({ preventScroll: true }); returnFocus.current = false; }
+    }
+  }, [selected]);
+
+  return <main className={styles.app} data-sheet-expanded={sheetExpanded}>
+    <section className={styles.mapSection} inert={phone && sheetExpanded} aria-label={area === "interview" ? "WE26 interview booth map" : "WE26 main booth map"}>
+      <FloorPlan key={area} area={area} onDataLoad={setData} selectedBoothId={selectedId} focusRequest={focusRequest} onSelectBooth={locate} onDeselectBooth={deselect} matchingBoothIds={matchingBooths} savedCompanyIds={savedIds} visitedCompanyIds={visitedIds} />
+    </section>
+    <nav className={styles.floorSwitch} inert={phone && sheetExpanded} aria-label="Floor map views">
+      <Link href="/" aria-current={area === "main" ? "page" : undefined}>Main Floor</Link>
+      <Link href="/interview-booths" aria-current={area === "interview" ? "page" : undefined}>Interviews</Link>
+    </nav>
+    <ExplorerSheet expanded={sheetExpanded} onExpandedChange={setSheetExpanded}>
+      <div id="explorer-panel-content" ref={scroll} className={styles.panelContent} onKeyDown={event => { if (event.key === "Escape") { if (selected) returnToBrowse(); else if (phone) setSheetExpanded(false); } }}>
+        {selected ? <section className={styles.placeCard} aria-label="Selected booth details">
+          <button ref={back} className={styles.back} onClick={returnToBrowse}><Icon name="back" /><span>{tab === "all" ? "All companies" : tab === "saved" ? "Saved" : "Route"}</span></button>
+          <h1>{company?.name ?? "Available booth"}</h1>
+          <p className={styles.subtitle}>Booth {company ? company.boothIds.map(id => booths.get(id)?.number).join(" · ") : selected.number}</p>
+          <div className={styles.actions}>
+            <button type="button" aria-pressed={companyState.saved} disabled={!company} onClick={() => company && updateCompanyPreference(company.id, { saved: !companyState.saved })}><Icon name="star" filled={companyState.saved} /><span>{companyState.saved ? "Saved" : "Save"}</span></button>
+            <button type="button" aria-pressed={companyState.visited} disabled={!company} onClick={() => company && updateCompanyPreference(company.id, { visited: !companyState.visited })}><Icon name="check" /><span>{companyState.visited ? "Visited" : "Mark Visited"}</span></button>
+          </div>
+          {company && <div className={styles.notes}><label htmlFor="company-notes">Notes</label><textarea id="company-notes" placeholder="Recruiter names, conversations, follow-ups…" value={companyState.notes} onFocus={() => phone && setSheetExpanded(true)} onChange={event => updateCompanyPreference(company.id, { notes: event.target.value })} /></div>}
+          {company && company.boothIds.length > 1 && <div className={styles.locations}><h2>Booth locations</h2><div>{company.boothIds.map(id => <button key={id} aria-pressed={id === selectedId} onClick={() => locate(id)}>{booths.get(id)?.number}</button>)}</div></div>}
+          {!preferences.persisted && <p className={styles.storageStatus} role="status">Changes saved for this session.</p>}
+        </section> : <>
+          <div className={styles.panelHeader}><h1>WE26</h1><p className={styles.subtitle}>Career Fair · Boston · Nov 5–7</p></div>
+          <label className={styles.searchField}><Icon name="search" /><input ref={search} aria-label="Search companies or booths" type="search" placeholder="Search companies or booths" value={query} onFocus={() => phone && setSheetExpanded(true)} onChange={event => setQuery(event.target.value)} /></label>
+          <div className={styles.tabs} role="tablist" aria-label="Company lists">{(["all", "saved", "route"] as const).map(value => <button key={value} ref={tab === value ? activeTab : undefined} id={`company-tab-${value}`} role="tab" aria-selected={tab === value} aria-controls="company-list" tabIndex={tab === value ? 0 : -1} onClick={() => { setTab(value); if (scroll.current) scroll.current.scrollTop = 0; }} onKeyDown={event => { const values: Tab[] = ["all", "saved", "route"]; if (["ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key)) { event.preventDefault(); const next = event.key === "Home" ? "all" : event.key === "End" ? "route" : values[(values.indexOf(value) + (event.key === "ArrowRight" ? 1 : 2)) % 3]; setTab(next); document.getElementById(`company-tab-${next}`)?.focus(); } }}>{value === "all" ? "All" : value === "saved" ? "Saved" : "Route"}</button>)}</div>
+          {tab === "route" && <p className={styles.routeCaption}>{remaining} of {route.length} left · in walking order</p>}
+          <div id="company-list" role="tabpanel" aria-labelledby={`company-tab-${tab}`} className={styles.results}>
+            {(tab === "all" ? results.slice(0, 60) : results).map(item => <div className={styles.row} key={item.id} data-visited={visitedIds.has(item.id)}>
+              {tab === "route" && <button className={styles.roundCheck} type="button" role="checkbox" aria-checked={visitedIds.has(item.id)} aria-label={`Mark ${item.name} ${visitedIds.has(item.id) ? "not visited" : "visited"}`} onClick={() => updateCompanyPreference(item.id, { visited: !visitedIds.has(item.id) })}>{visitedIds.has(item.id) && <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 10 3.5 3.5L15 7" /></svg>}</button>}
+              <button className={styles.result} onClick={() => locate(item.boothIds.find(id => booths.get(id)?.number.includes(normalized)) ?? item.boothIds[0])}><span><strong>{item.name}</strong><span>Booth {item.boothIds.map(id => booths.get(id)?.number).join(" · ")}</span></span>{savedIds.has(item.id) ? <span className={styles.savedStar}><Icon name="star" filled /></span> : <Icon name="arrow" />}</button>
+            </div>)}
+            {!data && <p className={styles.empty} role="status">Loading companies…</p>}
+            {data && !results.length && <div className={styles.empty}><strong>{normalized ? "No companies found" : tab === "route" ? "Your route starts here" : "Save your first company"}</strong><p>{normalized ? "Try a company name or booth number." : "Open a company and tap Save to keep it here."}</p></div>}
+          </div>
+          <a className={styles.sourceLink} href="https://swe.expocad.com/Events/we26/index.html" target="_blank" rel="noreferrer">Official floor plan ↗</a>
+        </>}
+      </div>
+    </ExplorerSheet>
+    <div className={styles.colorKey} aria-label="Booth color key"><span><i className={styles.selectedDot} />Selected</span><span><i className={styles.savedDot} />Saved</span><span><i className={styles.visitedDot} />Visited</span></div>
   </main>;
 }

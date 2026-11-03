@@ -3,22 +3,32 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "ingest:floorplan": "node scripts/ingest-floorplan.js",
+    "build:fresh": "npm run ingest:floorplan && next build",
+    "test:floorplan": "node --test scripts/ingest-floorplan.test.js scripts/floorplan-geometry.test.js scripts/floorplan-area.test.js scripts/d3-zoom.test.js scripts/floorplan-labels.test.js scripts/explorer-panel.test.js scripts/company-planner.test.js",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
+    "d3-selection": "^3.0.0",
+    "d3-transition": "^3.0.1",
+    "d3-zoom": "^3.0.0",
     "next": "16.4.3",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },
   "devDependencies": {
+    "@types/d3-selection": "^3.0.12",
+    "@types/d3-transition": "^3.0.9",
+    "@types/d3-zoom": "^3.0.9",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.4.3",
+    "jsdom": "^30.1.3",
     "typescript": "^5"
   },
   "packageManager": "pnpm@10.23.0"
