@@ -71,7 +71,7 @@ function MapSurface({ data, selectedBoothId, onSelectBooth, onDeselectBooth, foc
   const settle = useCallback((next: SettledView) => setView({ level: next.level, visibleIds: new Set(next.visibleIds) }), []);
   const selectedId = selectedBoothId === undefined ? internalSelection : selectedBoothId;
   const companies = useMemo(() => new Map(data.companies.map((company) => [company.id, company])), [data]);
-  const shapes = useMemo(() => data.booths.map((booth) => { const bounds = getBounds(booth.polygons); return { booth, bounds, tier: boothLabelTier(bounds) }; }), [data]);
+  const shapes = useMemo(() => data.booths.map((booth) => { const bounds = getBounds(booth.polygons); return { booth, bounds, tier: boothLabelTier(bounds, data.area) }; }), [data]);
   const labelShapes = useMemo(() => showLabels && view ? shapes.filter(({ booth, tier }) => tier <= view.level && view.visibleIds.has(booth.id)) : [], [shapes, showLabels, view]);
   const selected = useMemo(() => data.booths.find((booth) => booth.id === selectedId), [data, selectedId]);
   const sceneBounds = useMemo(() => unionBounds([
