@@ -2,9 +2,11 @@
 
 WEMap is an interactive conference floro map that help atendees plan their conference experience by finding exhibitors, organize company visits, and get walking directions to booths. 
 
-<video controls playsinline width="800" src="public/Screen%20Recording%202026-11-03%20131746.mp4">
-  <a href="public/Screen%20Recording%202026-11-03%20131746.mp4"></a>
-</video>
+
+
+https://github.com/user-attachments/assets/db23f01b-256f-4ec9-9162-67d83decbf28
+
+
 
 I was at the SHPE conference having trouble finding booths even through there are official EXPOCAD floor maps. These aren't super interactive, and I wanted a more integrated tool where I could get directions to booths while inside the convention center but also, create a map of the places I wanted to visit and add notes for the people I connected with. I also wanted somewhere where I could do research on the exhibitors and what roles were open. 
 
